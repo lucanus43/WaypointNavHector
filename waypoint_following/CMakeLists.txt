@@ -14,7 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 ## System dependencies are found with CMake's conventions
-# find_package(Boost REQUIRED COMPONENTS system)
+ find_package(Boost REQUIRED COMPONENTS system)
 
 
 ## Uncomment this if the package has a setup.py. This macro ensures
@@ -70,7 +70,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate added messages and services with any dependencies listed here
 # generate_messages(
 #   DEPENDENCIES
-#   geometry_msgs#   hector_uav_msgs#   std_msgs
+#   geometry_msgs
+#   hector_uav_msgs
+#   std_msgs
 # )
 
 ################################################
@@ -103,7 +105,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS include
+ # INCLUDE_DIRS include
   LIBRARIES waypoint_following
   CATKIN_DEPENDS actionlib geometry_msgs hector_uav_msgs roscpp rospy std_msgs
   DEPENDS system_lib
@@ -128,19 +130,19 @@ include_directories(
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
-# add_dependencies(waypoint_following ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+# add_dependencies(waypoint_following_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
-# add_executable(waypoint_following_node src/waypoint_following_node.cpp)
+ add_executable(basic_waypoint_node src/basic_waypoint_node.cpp)
 
 ## Add cmake target dependencies of the executable
 ## same as for the library above
-# add_dependencies(waypoint_following_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ add_dependencies(basic_waypoint_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Specify libraries to link a library or executable target against
-# target_link_libraries(waypoint_following_node
-#   ${catkin_LIBRARIES}
-# )
+ target_link_libraries(basic_waypoint_node
+   ${catkin_LIBRARIES}
+ )
 
 #############
 ## Install ##
@@ -190,8 +192,8 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-include_directories(include ${catkin_INCLUDE_DIRS})
+#include_directories(include ${catkin_INCLUDE_DIRS})
 
-add_executable(basic_waypoint_node src/basic_waypoint_node.cpp)
-target_link_libraries(basic_waypoint_node ${catkin_LIBRARIES})
-add_dependencies(basic_waypoint_node waypoint_following_cpp)
+#add_executable(basic_waypoint_node src/basic_waypoint_node.cpp)
+#target_link_libraries(basic_waypoint_node ${catkin_LIBRARIES})
+#add_dependencies(basic_waypoint_node waypoint_following_cpp)
