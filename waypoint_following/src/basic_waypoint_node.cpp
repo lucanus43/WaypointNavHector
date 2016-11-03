@@ -50,7 +50,10 @@ ROS_INFO("abs( current_pos->pose.position.y - current_goal.pose.position.y ): %f
 }
 
 void generate_waypoints() {
+	// Local variables
 	geometry_msgs::Pose tmp_wp;
+
+	// Processing
 	//Waypoint 1
 	tmp_wp.orientation.w = 1.0;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	tmp_wp.position.z = 5.0;	//First waypoint is at [0, 0, 5]
@@ -76,24 +79,24 @@ void generate_waypoints() {
 }
 
 int main(int argc, char **argv) {
+	//Setup node (must be called before creating variables)
+	ros::init( argc, argv, "basic_waypoint" );
+	ros::NodeHandle nh;
+	ros::Rate loop_rate( 10 );	
+
+
 	// Local variables
 	geometry_msgs::PoseStamped HBII0;		// Initial pose in inertial coords. Set to zero. 	
 	hector_uav_msgs::LandingGoal landGoal;	
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
+	ros::Subscriber pos_sub;
+	hector_uav_msgs::TakeoffGoal goal;		// Goal (empty message) for TakeoffClient
 
-	//Setup node
-	ros::init( argc, argv, "basic_waypoint" );
-	ros::NodeHandle nh;
-	ros::Rate loop_rate( 10 );
+
 
 	//Publishers & Subscribers
-	// Publish to /position_goal, and Listen to /position_goal
-	ros::Subscriber pos_sub = nh.subscribe( "/ground_truth_to_tf/pose", 1000, position_cb );
-	//ros::Publisher pos_pub = nh.advertise<geometry_msgs::PoseStamped>( "command/pose", 1000 );
-	PoseActionClient poc(nh, "action/pose");
-	poc.waitForServer();
-	ROS_INFO("Pose client initialised.");
-
+	// Publish to /position_goal, and Listen to /ground_truth_to_tf/pose (current pose)
+	pos_sub = nh.subscribe( "/ground_truth_to_tf/pose", 1000, position_cb );
 	// Generate the waypoints
 	generate_waypoints();
 		
@@ -106,25 +109,27 @@ int main(int argc, char **argv) {
 	ROS_INFO( "Publishing position goal..." );
 
 
-	// Send take-off command to UAV
-	TakeoffClient toc(nh, "action/takeoff");
-	LandingClient lnc(nh, "action/landing");
-	ROS_INFO("Initialised client waiting for connection");
-	toc.waitForServer();
-	ROS_INFO("Waited for server.");
+	// Initialise the PoseActionClient
+	PoseActionClient poc(nh, "action/pose");
+	poc.waitForServer();
+	ROS_INFO("Pose client initialised.");
 	
-	hector_uav_msgs::TakeoffGoal goal;
+	// Initialise the TakeoffClient
+	TakeoffClient toc(nh, "action/takeoff");
+	toc.waitForServer();
+	ROS_INFO("Takeoff client initialised.");
+	
+	
+	// Send take-off goal to toc
 	toc.sendGoal(goal);
 	
-	
+	// Main while loop
 	while ( ros::ok() && !quit_loop ) {
 		//Update our message so the receiving node knows it is recent
 		current_goal.header.stamp = ros::Time::now();
 		current_goal.header.seq++;
 		current_goal.header.frame_id = "world";
 
-		//Publish messages
-		//pos_pub.publish( current_goal );
 		// Send current goal to pose
 		poseGoal.target_pose = current_goal; 
 		poc.sendGoal(poseGoal);
@@ -135,15 +140,17 @@ int main(int argc, char **argv) {
 	}
 	
 	// Land UAVadvertise
+	// Initialise landing client
+	LandingClient lnc(nh, "action/landing");
+	lnc.waitForServer();
+	ROS_INFO("Landing client initialised.");
 	// Set initial inertial pose
-	ROS_INFO("Initiating landing.");
 	HBII0.header.stamp = ros::Time::now();
 	HBII0.header.seq++;
 	HBII0.header.frame_id = "world";
 	// Set target pose
 	landGoal.landing_zone = HBII0;
 	// Send land goal
-	lnc.waitForServer();
 	lnc.sendGoal(landGoal);
 
 	ros::shutdown();
