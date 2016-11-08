@@ -136,6 +136,31 @@ Visualization Manager:
         RobotModel: false
         Value: true
       Zoom Factor: 1
+    - Class: rviz/Camera
+      Enabled: true
+      Image Rendering: background and overlay
+      Image Topic: /camera/rgb/image_raw
+      Name: Camera
+      Overlay Alpha: 0.5
+      Queue Size: 2
+      Transport Hint: raw
+      Value: true
+      Visibility:
+        Grid: false
+        LaserScan: true
+        Marker: true
+        RobotModel: false
+        Value: true
+      Zoom Factor: 1
+    - Class: rviz/PointCloud2
+      Enabled: true
+      Topic: /camera/depth/points
+      Overlay Alpha: 0.5
+      Queue Size: 2
+      Transport Hint: raw
+      Decay Time: 5
+      Value: true
+      Name: PointCloudView
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /command/pose_marker
