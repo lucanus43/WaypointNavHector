@@ -15,6 +15,11 @@
    <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor.launch">
      <arg name="name" default="$(arg name)"/>
      <arg name="model" value="$(find hector_quadrotor_description)/urdf/quadrotor_downward_cam.gazebo.xacro"/>
+     <arg name="controllers" value="
+        controller/attitude
+        controller/velocity
+        controller/position
+        "/>
      <arg name="tf_prefix" default="$(arg tf_prefix)"/>
      <arg name="x" default="$(arg x)"/>
      <arg name="y" default="$(arg y)"/>
