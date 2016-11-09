@@ -101,7 +101,7 @@ int main(int argc, char **argv){
 		
 	// Start CV and subscribe to images
 	cv::startWindowThread();
-	imgSub = it.subscribe("camera/rgb/image_raw", 1, imageCallback);
+	imgSub = it.subscribe("camera/rgb/image_raw", 1, rgbCallback);
 	// Subscribe to landing
 	land_sub = nh.subscribe("action/landing", 1, landingCallBack);
 	ROS_INFO("[image_transporter] Landing client initialised.");
