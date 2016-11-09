@@ -16,12 +16,22 @@ Date: 161108
 #include <cmath>
 #include <string>
 #include <sstream>
+#include <vector>
 // ROS Includes
 #include <ros/ros.h>
 #include <image_transport/image_transport.h>
+#include "actionlib/client/simple_action_client.h"
 // OpenCV Includes
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
+// Hector includes
+#include "hector_uav_msgs/LandingAction.h"
+
+// ---------------------- GLOBAL VARIABLES -----------------------------//
+
+typedef actionlib::SimpleActionClient<hector_uav_msgs::LandingAction> LandingClient;
+bool quitImageTransport = false;
+
 
 // ------------------------- CODE ------------------------------ //
 
@@ -50,6 +60,20 @@ try {
   }
 }
 
+// -------------------------------------------------------------
+/*
+landingCallBack- 	Called when landing action is called.
+					Quits main loop.
+
+Author: JDev 161109
+	
+*/
+// -------------------------------------------------------------
+void landingCallBack(const geometry_msgs::PoseStamped::ConstPtr& landingPose){
+	// Set quitImageTransport to true
+	quitImageTransport = true;
+}
+
 
 
 // -------------------------------------------------------------
@@ -61,26 +85,34 @@ Author: JDev 161108
 */
 // -------------------------------------------------------------
 int main(int argc, char **argv){
-  // Initialise ROS
-  ros::init(argc, argv, "asus_image_listener");
-  // Create node handle
-  ros::NodeHandle nh;
-  // Initialise OpenCV
-  cv::namedWindow("view");
+	// Initialise ROS
+	ros::init(argc, argv, "asus_image_listener");
+	// Create node handle
+	ros::NodeHandle nh;
+	// Initialise OpenCV
+	cv::namedWindow("view");
+	
 
-  // Local Variables
-  image_transport::ImageTransport it(nh);
-  image_transport::Subscriber sub;
-
-  // Process
-  cv::startWindowThread();
-  sub = it.subscribe("camera/image", 1, imageCallback);
+	// Local Variables
+	image_transport::ImageTransport it(nh);
+	image_transport::Subscriber imgSub;
+	ros::Subscriber land_sub;					// Landing subscriber
+		
+		
+	// Start CV and subscribe to images
+	cv::startWindowThread();
+	imgSub = it.subscribe("camera/rgb/image_raw", 1, imageCallback);
+	// Subscribe to landing
+	land_sub = nh.subscribe("action/landing", 1, landingCallBack);
+	ROS_INFO("[image_transporter] Landing client initialised.");
   
-  
-  // Loop until images are no longer available or landing flag has been set.
-  // ..
-  ros::spin();
-  cv::destroyWindow("view");
+	// Loop until images are no longer available or landing flag has been set.
+	while (ros::ok() && !quitImageTransport){
+			ros::spinOnce();
+	}
+	
+	// Destroy view
+	cv::destroyWindow("view");
 }
 
 
