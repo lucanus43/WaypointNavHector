@@ -64,14 +64,21 @@ try {
 /*
 landingCallBack- 	Called when landing action is called.
 					Quits main loop.
+			TODO: Use standard callback for generic message
+				landingCallBack(const std_msgs::Empty msg)
 
 Author: JDev 161109
 	
 */
 // -------------------------------------------------------------
-void landingCallBack(const geometry_msgs::PoseStamped::ConstPtr& landingPose){
+void landingCallBack(const hector_uav_msgs::LandingActionGoalConstPtr& landingPose){
 	// Set quitImageTransport to true
 	quitImageTransport = true;
+	// Destroy view
+	ROS_INFO("[image_transporter] Destroying view.");
+	cv::destroyWindow("view");
+	// Exit
+	ros::shutdown();
 }
 
 
@@ -96,23 +103,20 @@ int main(int argc, char **argv){
 	// Local Variables
 	image_transport::ImageTransport it(nh);
 	image_transport::Subscriber imgSub;
-	ros::Subscriber land_sub;					// Landing subscriber
+	ros::Subscriber land_sub;	// Landing subscriber
 		
 		
 	// Start CV and subscribe to images
 	cv::startWindowThread();
 	imgSub = it.subscribe("camera/rgb/image_raw", 1, rgbCallback);
 	// Subscribe to landing
-	land_sub = nh.subscribe("action/landing", 1, landingCallBack);
+	land_sub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
 	ROS_INFO("[image_transporter] Landing client initialised.");
   
 	// Loop until images are no longer available or landing flag has been set.
 	while (ros::ok() && !quitImageTransport){
-			ros::spinOnce();
+		ros::spin();
 	}
-	
-	// Destroy view
-	cv::destroyWindow("view");
 }
 
 
