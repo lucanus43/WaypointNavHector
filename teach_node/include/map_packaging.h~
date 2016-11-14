@@ -1,4 +1,4 @@
-/* map_packacing.h
+/* map_packaging.h
    
 Desc:		Header file for the map_packaging program
 		
@@ -28,11 +28,18 @@ Date: 161114
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
 
+using namespace std;
 using namespace cv;
 
 // ------------------------- DECLARATIONS ------------------------------ //
 // Variables
 fstream poseFile;
+ofstream outputFile;
+vector<Mat> vecSCAA;
+vector<Mat> vecQCA;
+Mat QCS = Mat::zeros(4,1,CV_64F);
+Mat SCSS = Mat::zeros(3,1,CV_64F);
 
 // Functions
 void packageMap(string poseFileLocation, Mat TCM);
+void extractPosesFromFile(poseFile);

@@ -1,4 +1,4 @@
-/* map_packacing.h
+/* map_packaging.h
    
 Desc:		Header file for the map_packaging program
 		
@@ -16,12 +16,6 @@ Date: 161114
 #include <string>
 #include <sstream>
 #include <vector>
-// ROS Includes
-#include <ros/ros.h>
-#include <image_transport/image_transport.h>
-#include "actionlib/client/simple_action_client.h"
-// Hector includes
-#include "hector_uav_msgs/LandingAction.h"
 // OpenCV includes
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/utility.hpp>
@@ -34,8 +28,11 @@ using namespace cv;
 // ------------------------- DECLARATIONS ------------------------------ //
 // Variables
 fstream poseFile;
+ofstream outputFile;
 vector<Mat> vecSCAA;
 vector<Mat> vecQCA;
+Mat QCS = Mat::zeros(4,1,CV_64F);
+Mat SCSS = Mat::zeros(3,1,CV_64F);
 
 // Functions
 void packageMap(string poseFileLocation, Mat TCM);
