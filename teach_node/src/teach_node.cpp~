@@ -53,14 +53,19 @@ int main(int argc, char **argv){
 	// Process:
 	
 	// Initialisation
-	// ..
+	// Subscribe to landing action topic
+	// Subscribe to odom topic
+	// Obtain initial SCMM from VO (will be 0) -> oldSCMM
 	
-	// Loop (till waypoints are complete)
-		// Perform Waypoint navigation.
-		// Obtain TCM from VO
-		// if (|d| > 2 m)
+	// Loop (till waypoints are complete/landing initiated)
+		// Perform Waypoint navigation. (use rosspawn)
+		// Rtabmap point cloud building (rosspawn? Need VO)
+		// Obtain TCM from VO(RTABMAP publishes VO to /odom topic)
+		// Obtain SCMM from VO
+		// if (|oldSCMM - SCMM| > 2 m)
 			// Launch packageMap and package submap
 			// Relaunch RTABMAP to start new submap
+			// oldSCMM = SCMM;
 		// endif
 	// end loop
 }

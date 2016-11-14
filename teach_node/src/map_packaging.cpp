@@ -79,8 +79,6 @@ void packageMap(string poseFileLocation, Mat TCM){
 	
 }
 
-
-
 bool extractPosesFromFile(fstream poseFile){
 	// Local variables
 	string tempString;
