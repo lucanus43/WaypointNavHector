@@ -31,7 +31,7 @@ void packageMap(string poseFileLocation, Mat TCM){
 	
 	// Use initial camera pose to define submap frame. Based on features seen in first pose?
 	// Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
-	TCS = Mat::eye(3);
+	TCS = Mat::eye(3,3,CV_64F);
 	TCA = quat2dcm(vecQCA[0]);
 	SCAA = vecSCAA[0];
 	SCSS = Mat::zeros(3,1,CV_64F);
