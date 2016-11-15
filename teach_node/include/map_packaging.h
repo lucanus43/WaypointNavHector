@@ -8,6 +8,8 @@ Author: Jeffrey Devaraj
 Date: 161114 
 
 */
+#ifndef mapPackaging__H
+#define mapPackaging__H
 
 // C/C++ Includes
 #include <iostream>
@@ -35,5 +37,9 @@ Mat QCS = Mat::zeros(4,1,CV_64F);
 Mat SCSS = Mat::zeros(3,1,CV_64F);
 
 // Functions
+void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCM);
 void packageMap(string poseFileLocation, Mat TCM);
 void extractPosesFromFile(poseFile);
+
+
+#endif
