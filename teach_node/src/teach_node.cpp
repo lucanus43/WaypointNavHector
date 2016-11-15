@@ -1,6 +1,7 @@
 /* teach_node.cpp 
    
 Desc:	Performs the teach node for visual teach and repeat implementation.
+		Note: BG. - Background tasks
 
 Author: Jeffrey Devaraj
 Date: 161114 
@@ -26,11 +27,99 @@ Date: 161114
 // Hector includes
 #include "hector_uav_msgs/LandingAction.h"
 
-// ---------------------- GLOBAL VARIABLES -----------------------------//
-// ..
+using namespace cv;
 
+// ---------------------- GLOBAL VARIABLES -----------------------------//
+bool quitTeachNode = false;
+bool saveMap = false;
+vector<Mat> vecSCMM;
+vector<Mat> vecTCM;
 
 // ------------------------- CODE ------------------------------ //
+
+
+
+// -------------------------------------------------------------
+/*
+cloudCallBack - Callback function for pointcloud subscriber
+				Derived from: http://answers.ros.org/question/136916/conversion-from-sensor_msgspointcloud2-to-pclpointcloudt/
+
+Author: JDev 161108
+	
+*/
+// -------------------------------------------------------------
+void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
+	
+	// Local Variables
+	pcl::PCLPointCloud2 pcl_pc2;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
+    
+    // If saveMap is true, then save map to file and set saveMap = false
+    if (saveMap){
+    	pcl_conversions::toPCL(*input,pcl_pc2);
+    	pcl::fromPCLPointCloud2(pcl_pc2,*temp_cloud);
+    	
+    	// Save map here.
+    	//..
+    	
+    	// Save poses here.
+    	// ..
+    	
+    	// Set saveMap to false
+    	saveMap = false;
+    }
+}
+
+
+// -------------------------------------------------------------
+/*
+odomCallBack- 	Called when odometry is received.
+
+Author: JDev 161115
+	
+*/
+// -------------------------------------------------------------
+void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
+	// Local variables
+	Mat SCMM = Mat::zeros(3,1,CV_64F);
+	Mat TCM = Mat::zeros(3,3,CV_64F);
+	
+	// Notify user that CB functon has been entered
+	ROS_INFO("[teach_node] Odometry received.");
+	
+	// Process
+	// Obtain SCMM
+	SCMM.push_back(odomMsg->pose.pose.position.x);
+	SCMM.push_back(odomMsg->pose.pose.position.y);
+	SCMM.push_back(odomMsg->pose.pose.position.z);
+	// Get TCM from quaternion in odomMsg	
+	TCM = quat2dcm( msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
+	
+	// Push poses back into vectors
+	vecSCMM.push_back(SCMM);
+	vecTCM.push_back(TCM);
+}
+
+
+// -------------------------------------------------------------
+/*
+landingCallBack- 	Called when landing action is called.
+					Quits main loop.
+			TODO: Use standard callback for generic message
+				landingCallBack(const std_msgs::Empty msg)
+
+Author: JDev 161109
+	
+*/
+// -------------------------------------------------------------
+void landingCallBack(const hector_uav_msgs::LandingActionGoalConstPtr& landingPose){
+	// Set quitImageTransport to true
+	quitTeachNode = true;
+	// Destroy view
+	ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
+	// Exit
+	ros::shutdown();
+}
 
 
 // -------------------------------------------------------------
@@ -48,26 +137,45 @@ int main(int argc, char **argv){
 	ros::NodeHandle nh;
 
 	// Local variables
-	//..
+	ros::Subscriber cloudSub;	// Point cloud subscruber
+	ros::Subscriber landSub;	// Landing subscriber
+	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
+	
 	
 	// Process:
 	
-	// Initialisation
+	// Initialisation:
 	// Subscribe to landing action topic
+	landSub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
 	// Subscribe to odom topic
+	odomSub = nh.subscribe("/odom", '1000, odomCallBack);
+	// Subscribe to cloud_map topic
+	cloudSub = nh.subscribe("/cloud_map", 1000, cloudCallBack);
+	
 	// Obtain initial SCMM from VO (will be 0) -> oldSCMM
 	
 	// Loop (till waypoints are complete/landing initiated)
-		// Perform Waypoint navigation. (use rosspawn)
-		// Rtabmap point cloud building (rosspawn? Need VO)
-		// Obtain TCM from VO(RTABMAP publishes VO to /odom topic)
-		// Obtain SCMM from VO
+	while(ros::ok() && !quitTeachNode){
+		// BG. Perform Waypoint navigation. (Build a launch file that launches waypointnav) //
+		// BG. Rtabmap point cloud building in background (rosspawn? Need VO) //
+		
+		// BG. Obtain TCM from VO(RTABMAP publishes VO to /odom topic) //
+		// BG. Obtain SCMM from VO	//
+		
 		// if (|oldSCMM - SCMM| > 2 m)
-			// Launch packageMap and package submap
-			// Relaunch RTABMAP to start new submap
+			// Save current point cloud map from cloud_map topic to pcd file
+				// if listening to cloud_map topic, set a flag for cb function to save.
+				saveMap = true;
+				// Call packageMap and package submap
+				packageMap(vecSCMM, vecTCM);
+				// Reset vecSCMM and vecTCM
+				vecSCMM.clear();
+				vecTCM.clear();
+				
+			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
 			// oldSCMM = SCMM;
 		// endif
-	// end loop
+	}// end loop
 }
 
 
