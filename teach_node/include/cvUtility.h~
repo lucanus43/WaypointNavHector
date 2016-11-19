@@ -27,6 +27,7 @@ Date: 07/09/16
 
 // Namespaces
 using namespace cv;
+using namespace std;
 
 
 // Constants

@@ -72,6 +72,7 @@ void generate_waypoints() {
 	
 	//Waypoint 1 - > YPR = [0,0,0]
 	tf_temp_quat.setEulerZYX(PI_F/2, 0.0, 0.0);
+	ROS_INFO("Debug output");
 	//  Convert TF quaternion to geometry_msgs
 	tf::quaternionTFToMsg(tf_temp_quat, gm_temp_quat);
 	// Set waypoint orientation

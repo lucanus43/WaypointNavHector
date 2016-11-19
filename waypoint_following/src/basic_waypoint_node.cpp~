@@ -71,7 +71,7 @@ void generate_waypoints() {
 	// Processing
 	
 	//Waypoint 1 - > YPR = [0,0,0]
-	tf_temp_quat.setEulerZYX(PI_F/4, 0.0, 0.0);
+	tf_temp_quat.setEulerZYX(PI_F/2, 0.0, 0.0);
 	//  Convert TF quaternion to geometry_msgs
 	tf::quaternionTFToMsg(tf_temp_quat, gm_temp_quat);
 	// Set waypoint orientation
@@ -90,7 +90,7 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.z = 6.0;	//[0, 0, 6.0]
+	tmp_wp.position.x = 1.0;	//[0, 0, 6.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 3

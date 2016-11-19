@@ -1,6 +1,6 @@
 /* map_packaging.cpp 
    
-Desc:	Reads in a point cloud (.pcl) and a text file with poses (time x,y,z,qx,qy,qz,qw)
+Desc:	Reads in a text file with poses (time x,y,z,qx,qy,qz,qw) in an arbitrary frame
 		Defines a submap frame and publishes the submap frame to global map frame transform (TSM) along 
 		with the displacement of submap frame rel. global map frame (SSM).
 		

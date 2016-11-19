@@ -35,18 +35,19 @@ Date: 161114
 #include <pcl/conversions.h>
 #include <pcl_ros/transforms.h>
 // JDev Files
-#include "map_packaging.h"
 #include "cvUtility.h"
+#include "map_packaging.h"
+
 
 using namespace cv;
 
 // ---------------------- GLOBAL VARIABLES -----------------------------//
 bool quitTeachNode = false;
 bool saveMap = false;
-vector<Mat> vecSCMM;
-vector<Mat> vecTCM;
-Mat SCMM = Mat::zeros(3,1,CV_64F);
-Mat TCM = Mat::zeros(3,3,CV_64F);
+vector<Mat> vecSOCL;
+vector<Mat> vecTCL;
+Mat SOCL = Mat::zeros(3,1,CV_64F);
+Mat TCL = Mat::zeros(3,3,CV_64F);
 
 // ------------------------- CODE ------------------------------ //
 
@@ -80,7 +81,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	
     	// Save poses here.
     	// Call packageMap and package submap
-		packageMap(vecSCMM, vecTCM);
+		packageMap(vecSOCL, vecTCL);
     	
     	// Set saveMap to false
     	saveMap = false;
@@ -98,24 +99,37 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat QCM = Mat::zeros(4,1,CV_64F);
-	
-	// Notify user that CB functon has been entered
-	ROS_INFO("[teach_node] Odometry received.");
+	Mat SOCO;
+	Mat QCL = Mat::zeros(4,1,CV_64F);
 	
 	// Process
-	// Obtain SCMM
-	SCMM.push_back(odomMsg->pose.pose.position.x);
-	SCMM.push_back(odomMsg->pose.pose.position.y);
-	SCMM.push_back(odomMsg->pose.pose.position.z);
-	// Get TCM from quaternion in odomMsg
-	QCM.push_back(odomMsg->pose.pose.orientation.w); QCM.push_back(odomMsg->pose.pose.orientation.x); 
-	QCM.push_back(odomMsg->pose.pose.orientation.y); QCM.push_back(odomMsg->pose.pose.orientation.z); 
-	TCM = ang2dcm(quat2eul(QCM));
+	// Obtain SOCO
+	SOCO.push_back(odomMsg->pose.pose.position.x);
+	SOCO.push_back(odomMsg->pose.pose.position.y);
+	SOCO.push_back(odomMsg->pose.pose.position.z);
+	
+	// Notify user that CB functon has been entered
+	ROS_INFO("[teach_node] SOCO: [%f,%f,%f]", SOCO.at<double>(0), SOCO.at<double>(1), SOCO.at<double>(2));
+	
+	// Get TCL from quaternion in odomMsg
+	
+	QCL.push_back(odomMsg->pose.pose.orientation.w); 
+		
+	QCL.push_back(odomMsg->pose.pose.orientation.x); 
+	
+	QCL.push_back(odomMsg->pose.pose.orientation.y); QCL.push_back(odomMsg->pose.pose.orientation.z); 
+	
+	// TODO: Convert QCM to a tf::quaternion and set TCL as a tf::matrix3x3
+	TCL = Mat::eye(3,3,CV_64F);
+	
+
+	
+	// Transform SOCO from O frame to L frame
+	SOCL = TCL.t()*SOCO;
 	
 	// Push poses back into vectors
-	vecSCMM.push_back(SCMM);
-	vecTCM.push_back(TCM);
+	vecSOCL.push_back(SOCL);
+	vecTCL.push_back(TCL);
 }
 
 
@@ -158,7 +172,7 @@ int main(int argc, char **argv){
 	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber landSub;	// Landing subscriber
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
-	Mat oldSCMM = Mat::zeros(3,1,CV_64F);
+	Mat oldSOCL = Mat::zeros(3,1,CV_64F);
 	
 	
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("trigger_new_map");
@@ -171,33 +185,34 @@ int main(int argc, char **argv){
 	// Subscribe to landing action topic
 	landSub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
 	// Subscribe to odom topic
-	odomSub = nh.subscribe("/odom", 1000, odomCallBack);
+	odomSub = nh.subscribe("/rtabmap/odom", 1000, odomCallBack);
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("/cloud_map", 1000, cloudCallBack);
 	
-	// Obtain initial SCMM from VO (will be 0) -> oldSCMM
+	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
 	
 	// Loop (till waypoints are complete/landing initiated)
 	while(ros::ok() && !quitTeachNode){
 		// BG. Perform Waypoint navigation. (Build a launch file that launches waypointnav) //
 		// BG. Rtabmap point cloud building in background (rosspawn? Need VO) //
 		
-		// BG. Obtain TCM from VO(RTABMAP publishes VO to /odom topic) //
-		// BG. Obtain SCMM from VO	//
+		// BG. Obtain TCL from VO(RTABMAP publishes VO to /odom topic) //
+		// BG. Obtain SOCL from VO	//
 		
-		if (norm(oldSCMM - SCMM) > 2.0){		// |oldSCMM - SCMM| > 2 m
+		if (norm(oldSOCL - SOCL) > 2.0){		// |oldSOCL - SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			saveMap = true;
-			// Reset vecSCMM and vecTCM
-			vecSCMM.clear();
-			vecTCM.clear();
+			// Reset vecSOCL and vecTCL
+			vecSOCL.clear();
+			vecTCL.clear();
 			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
 			if (!resetMapClient.call(resetMapReq, resetMapResp)){
 				ROS_INFO("[teach_node] Failed to reset map client.");
 			}
-			oldSCMM = SCMM;
+			oldSOCL = SOCL;
 		}// endif
+		ros::spin();
 	}// end loop
 }
 
