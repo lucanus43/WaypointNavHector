@@ -7,7 +7,6 @@
 // Date:						08/07/16
 
 #include "cvUtility.h"
-#include "glUtility.h"
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -331,50 +330,6 @@ Mat buildHomTrans(Mat Transform, Mat Translate) {
 	// Return
 	return HomT;
 	
-}
-
-
-// ------------------- OpenGL/OpenCV Compatibility Layer -------------------- //
-
-////////////////////////////////////////////////////////////////////////////////
-// Converts glm::mat4 array to cv::Mat
-//
-//160912 Created by Jeffrey Devaraj
-////////////////////////////////////////////////////////////////////////////////
-Mat mat4tocvmat(glm::mat4 Input) {
-	// Local variables
-	Mat OutputMat(4, 4, CV_64F);
-
-	// Loop to populate output matrix
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			OutputMat.at<double>(i,j) = Input[j][i];
-		}
-	}
-
-	// Return
-	return OutputMat;
-}
-
-
-////////////////////////////////////////////////////////////////////////////////
-// Converts cv::Mat array to glm::mat4
-//
-//160913 Created by Jeffrey Devaraj
-////////////////////////////////////////////////////////////////////////////////
-glm::mat4 cvmattomat4(Mat Input) {
-	// Local variables
-	glm::mat4 OutputMat;
-
-	// Loop to populate output matrix
-	for (int i = 0; i < 4; i++) {
-		for (int j = 0; j < 4; j++) {
-			OutputMat[j][i] = Input.at<double>(i,j);
-		}
-	}
-
-	// Return
-	return OutputMat;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -18,11 +18,14 @@ Date: 161114
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fstream>
 // OpenCV includes
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/utility.hpp>
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
+
+#include "cvUtility.h"
 
 using namespace std;
 using namespace cv;
@@ -39,7 +42,7 @@ Mat SCSS = Mat::zeros(3,1,CV_64F);
 // Functions
 void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCM);
 void packageMap(string poseFileLocation, Mat TCM);
-void extractPosesFromFile(poseFile);
+bool extractPosesFromFile(fstream poseFile);
 
 
 #endif

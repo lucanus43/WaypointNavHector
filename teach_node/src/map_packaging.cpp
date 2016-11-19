@@ -1,6 +1,6 @@
 /* map_packaging.cpp 
    
-Desc:	Reads in a point cloud (.pcl) and a text file with poses (time x,y,z,qx,qy,qz,qw)
+Desc:	Reads in a text file with poses (time x,y,z,qx,qy,qz,qw) in an arbitrary frame
 		Defines a submap frame and publishes the submap frame to global map frame transform (TSM) along 
 		with the displacement of submap frame rel. global map frame (SSM).
 		
@@ -13,19 +13,24 @@ Date: 161114
 
 // Includes
 #include "map_packaging.h"
-#include "cvUtility.h"
 
 // ------------------------- CODE ------------------------------ //
 
 
-void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCM){	
+void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){	
 	// Local variables
-	
-	
+	Mat TCS = Mat::eye(3,3,CV_64F); // Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
+	Mat TCA = Mat::zeros(3,3,CV_64F);
+	Mat SCAA = Mat::zeros(3,1,CV_64F);
+	Mat SCAS = Mat::zeros(3,1,CV_64F);
+	Mat SASS = Mat::zeros(3,1,CV_64F);	
+	Mat TAS = Mat::zeros(3,3,CV_64F);
+	Mat TCM = Mat::zeros(3,3,CV_64F);
+	Mat TSM = Mat::zeros(3,3,CV_64F);
 	// Use initial camera pose to define submap frame. Based on features seen in first pose?
-	// Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
-	TCS = Mat::eye(3,3,CV_64F);
-	TCA = quat2dcm(vecTCM[0]);
+	
+	
+	TCA = ang2dcm(quat2eul(vecTCA[0]));
 	SCAA = vecSCAA[0];
 	SCSS = Mat::zeros(3,1,CV_64F);
 	SCAS = TCS.t()*TCA*SCAA;		// SCAA = first pose in pose file, 
@@ -36,8 +41,8 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCM){
 	// if this is the first submap, then TSM = TSC = eye(3); - i.e. M frame aligned with C0 frame AND S frame.
 	// else TSM = TSC*TCM where TCM comes from VO. i.e. TSM = TCM since S aligned with C frame at start of submap.
 	
-	TCM = vecTCM[0];				// VO at first timestep (input from teach_node?)
-	TSM = TCS.t()*TCM;
+	//TCM = vecTCM[0];				// VO at first timestep (input from teach_node?)
+	//TSM = TCS.t()*TCM;
 	
 	// Open the output file
 	outputFile.open("submap_poses.txt");
@@ -63,8 +68,8 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCM){
 		// Write SCSS and QCS to file
 		// Note: QCS in format qw,qx,qy,qz
 		QCS = dcm2quat(TCS);
-		outputFile << SCSS[0] << " " << SCSS[1] << " " << SCSS[2] << " ";
-		outputFile << QCS[0] << " " << QCS[1] << " " << QCS[2] << " " << QCS[3] << endl;
+		outputFile << SCSS.at<double>(0) << " " << SCSS.at<double>(1) << " " << SCSS.at<double>(2) << " ";
+		outputFile << QCS.at<double>(0) << " " << QCS.at<double>(1) << " " << QCS.at<double>(2) << " " << QCS.at<double>(3) << endl;
 
 	} // end Loop
 	
@@ -109,7 +114,7 @@ bool extractPosesFromFile(fstream poseFile){
 		
 		// Push back vectors
 		vecSCAA.push_back(SCAA);
-		vecQCA.push_back(QBC);
+		vecQCA.push_back(QCA);
 		return true;
 	} else { return false; }
 }

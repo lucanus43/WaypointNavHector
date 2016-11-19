@@ -7,6 +7,14 @@ Date: 07/09/16
 
 #ifndef cvUtility__H
 #define cvUtility__H
+
+// C/C++ Includes
+#include <iostream>
+#include <cstdio>
+#include <cmath>
+#include <string>
+#include <sstream>
+#include <vector>
 // Includes OpenCV
 #include <opencv2/core/core.hpp>
 #include <opencv2/core/utility.hpp>
@@ -19,6 +27,7 @@ Date: 07/09/16
 
 // Namespaces
 using namespace cv;
+using namespace std;
 
 
 // Constants

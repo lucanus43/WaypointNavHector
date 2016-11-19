@@ -19,11 +19,13 @@ Date: 161114
 #include <vector>
 // ROS Includes
 #include <ros/ros.h>
+#include <nav_msgs/Odometry.h>
 #include <image_transport/image_transport.h>
 #include "actionlib/client/simple_action_client.h"
 // OpenCV Includes
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
+#include <std_srvs/Empty.h>
 // Hector includes
 #include "hector_uav_msgs/LandingAction.h"
 // PCL includes
@@ -96,7 +98,7 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-
+	Mat QCM = Mat::zeros(4,1,CV_64F);
 	
 	// Notify user that CB functon has been entered
 	ROS_INFO("[teach_node] Odometry received.");
@@ -106,8 +108,10 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SCMM.push_back(odomMsg->pose.pose.position.x);
 	SCMM.push_back(odomMsg->pose.pose.position.y);
 	SCMM.push_back(odomMsg->pose.pose.position.z);
-	// Get TCM from quaternion in odomMsg	
-	TCM = quat2dcm( msg->pose.pose.orientation.w, msg->pose.pose.orientation.x, msg->pose.pose.orientation.y, msg->pose.pose.orientation.z);
+	// Get TCM from quaternion in odomMsg
+	QCM.push_back(odomMsg->pose.pose.orientation.w); QCM.push_back(odomMsg->pose.pose.orientation.x); 
+	QCM.push_back(odomMsg->pose.pose.orientation.y); QCM.push_back(odomMsg->pose.pose.orientation.z); 
+	TCM = ang2dcm(quat2eul(QCM));
 	
 	// Push poses back into vectors
 	vecSCMM.push_back(SCMM);
@@ -167,7 +171,7 @@ int main(int argc, char **argv){
 	// Subscribe to landing action topic
 	landSub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
 	// Subscribe to odom topic
-	odomSub = nh.subscribe("/odom", '1000, odomCallBack);
+	odomSub = nh.subscribe("/odom", 1000, odomCallBack);
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("/cloud_map", 1000, cloudCallBack);
 	
