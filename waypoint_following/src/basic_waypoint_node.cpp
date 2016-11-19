@@ -12,7 +12,16 @@
 #include "hector_uav_msgs/PoseAction.h"
 #include "actionlib/client/simple_action_client.h"
 
+// TF includes
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h> // for tf::getPrefixParam()
+#include <tf/transform_datatypes.h>
+ #include "tf/LinearMath/Transform.h"	// To convert between geometry_msgs and TF libraries
+
 #include <vector>
+
+// Definitions
+const double PI_F = 3.1415926535897931;
 
 // Pose Goal message
 geometry_msgs::PoseStamped current_goal;
@@ -30,7 +39,11 @@ typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionCli
 void position_cb( const geometry_msgs::PoseStamped::ConstPtr& current_pos ) {
 ROS_INFO("Current position: [%f,%f,%f]", current_pos->pose.position.x, current_pos->pose.position.y, current_pos->pose.position.z);
 ROS_INFO("Current goal: [%f,%f,%f]", current_goal.pose.position.x, current_goal.pose.position.y, current_goal.pose.position.z);
-ROS_INFO("abs( current_pos->pose.position.y - current_goal.pose.position.y ): %f", fabs( current_pos->pose.position.y -current_goal.pose.position.y ));	
+ROS_INFO("abs( current_pos->pose.position.y - current_goal.pose.position.y ): %f", fabs( current_pos->pose.position.y -current_goal.pose.position.y ));
+
+// TODO	Force the pose of the UAV to converge to desired pose before moving to next WP.
+// ..
+
 
 //If the current position is close to the current goal for X, Y, & Z
 	if( fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius ) {
@@ -52,19 +65,36 @@ ROS_INFO("abs( current_pos->pose.position.y - current_goal.pose.position.y ): %f
 void generate_waypoints() {
 	// Local variables
 	geometry_msgs::Pose tmp_wp;
+	geometry_msgs::Quaternion gm_temp_quat;
+	tf::Quaternion tf_temp_quat;
 
 	// Processing
-	//Waypoint 1
-	tmp_wp.orientation.w = 1.0;	//Intitalize the quaternion (relying on x, y, and z to default to 0
+	
+	//Waypoint 1 - > YPR = [0,0,0]
+	tf_temp_quat.setEulerZYX(PI_F/2, 0.0, 0.0);
+	//  Convert TF quaternion to geometry_msgs
+	tf::quaternionTFToMsg(tf_temp_quat, gm_temp_quat);
+	// Set waypoint orientation
+	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
+	// Set waypoint displacement (rel. local-level frame)
 	tmp_wp.position.z = 5.0;	//First waypoint is at [0, 0, 5]
+	// Push back
 	waypoints.push_back(tmp_wp);
 	
-	//Waypoint 2
-	tmp_wp.position.x = 1.0;	//[1, 0, 5.0]
+	//Waypoint 2 - > YPR = [90,0,0]
+	
+	//tmp_wp.position.x = 1.0;	//[1, 0, 5.0]
+	tf_temp_quat.setEulerZYX(PI_F/2, 0.0, 0.0);
+	//  Convert TF quaternion to geometry_msgs
+	tf::quaternionTFToMsg(tf_temp_quat, gm_temp_quat);
+	// Set waypoint orientation
+	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
+	// Set waypoint displacement (rel. local-level frame)
+	tmp_wp.position.x = 1.0;	//[0, 0, 6.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 3
-	tmp_wp.position.y = 1.0;	//[1, 1.0, 5.0]
+	/*tmp_wp.position.y = 1.0;	//[1, 1.0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 4
@@ -76,6 +106,8 @@ void generate_waypoints() {
 	tmp_wp.position.x = -1.0;	//[0, 0, 50]
 	tmp_wp.position.y = 0.0;
 	waypoints.push_back(tmp_wp);
+	*/
+	
 }
 
 int main(int argc, char **argv) {

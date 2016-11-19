@@ -123,7 +123,7 @@ Visualization Manager:
         Value: true
       Zoom Factor: 1
     - Class: rviz/PointCloud2
-      Enabled: true
+      Enabled: false
       Topic: /camera/depth/points
       Decay Time: 5
       Name: PointCloudView

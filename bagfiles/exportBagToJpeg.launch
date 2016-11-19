@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+
+<launch>
+	<!-- Start Gazebo with wg world running in (max) realtime -->
+	<node pkg="rosbag" type="play" name="rosbag" args="-d 2 $(find bagfiles)/2016-11-10-04-00-33.bag"/>
+	<node name="extract" pkg="image_view" type="extract_images" respawn="false" output="screen" 		cwd="ROS_HOME">
+	<remap from="image" to="/camera/rgb/image_raw"/>
+	</node>
+</launch>
