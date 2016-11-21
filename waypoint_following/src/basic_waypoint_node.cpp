@@ -39,16 +39,16 @@ typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionCli
 void position_cb( const geometry_msgs::PoseStamped::ConstPtr& current_pos ) {
 ROS_INFO("Current position: [%f,%f,%f]", current_pos->pose.position.x, current_pos->pose.position.y, current_pos->pose.position.z);
 ROS_INFO("Current goal: [%f,%f,%f]", current_goal.pose.position.x, current_goal.pose.position.y, current_goal.pose.position.z);
-ROS_INFO("abs( current_pos->pose.position.y - current_goal.pose.position.y ): %f", fabs( current_pos->pose.position.y -current_goal.pose.position.y ));
+ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ): %f", fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ));
 
 // TODO	Force the pose of the UAV to converge to desired pose before moving to next WP.
 // ..
 
 
 //If the current position is close to the current goal for X, Y, & Z
-	if( fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius ) {
-		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y ) < wp_radius ) {
-			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z ) < wp_radius ) {
+	if( fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius && fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ) < wp_radius) {
+		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {
+			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius  && fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius) {
 				//If there are more waypoints
 				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypoints.size() ) {
@@ -91,7 +91,7 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = 1.0;	//[0, 0, 6.0]
+	tmp_wp.position.z = 6.0;	//[0, 0, 6.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 3
@@ -184,7 +184,9 @@ int main(int argc, char **argv) {
 	// Set target pose
 	landGoal.landing_zone = HBII0;
 	// Send land goal
-	lnc.sendGoal(landGoal);
+	
+	// DEBUG: Do not send goal
+	//lnc.sendGoal(landGoal);
 
 	ros::shutdown();
 

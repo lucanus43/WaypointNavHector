@@ -34,6 +34,11 @@ Date: 161114
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/conversions.h>
 #include <pcl_ros/transforms.h>
+// TF includes
+#include <tf/transform_broadcaster.h>
+#include <tf/transform_listener.h> // for tf::getPrefixParam()
+#include <tf/transform_datatypes.h>
+#include "tf/LinearMath/Transform.h"	// To convert between geometry_msgs and TF libraries
 // JDev Files
 #include "cvUtility.h"
 #include "map_packaging.h"
@@ -42,13 +47,31 @@ Date: 161114
 using namespace cv;
 
 // ---------------------- GLOBAL VARIABLES -----------------------------//
-bool quitTeachNode = false;
-bool saveMap = false;
-vector<Mat> vecSOCL;
-vector<Mat> vecTCL;
-Mat SOCL = Mat::zeros(3,1,CV_64F);
-Mat TCL = Mat::zeros(3,3,CV_64F);
 
+
+// Main variables
+	bool quitTeachNode = false;
+
+	tf::StampedTransform tfTBL;
+	tf::StampedTransform tfTCB;
+
+// Map packaging variables
+	bool saveMap = false;
+
+// Odometry variables
+	bool firstOdom = true;
+	vector<Mat> vecSOCL;
+	vector<Mat> vecTCL;
+	Mat SOCL = Mat::zeros(3,1,CV_64F);
+	Mat TCL = Mat::zeros(3,3,CV_64F);
+	Mat TBL;
+	Mat TOBhat;
+	Mat TCB;
+	Mat TOChat;
+	Mat TOLhat;
+	Mat TCLhat;
+	Mat QBL;
+	Mat QCB;
 // ------------------------- CODE ------------------------------ //
 
 
@@ -92,6 +115,11 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 // -------------------------------------------------------------
 /*
 odomCallBack- 	Called when odometry is received.
+		
+		NOTE: 	/odom does not output the same variables as RTABMAPVIZ (file -> save poses)
+				/odom -> SCOC where O is the camera_odometry frame (origin at C, aligned with C)
+				RTABMAPVIZ -> SFCK where F is a frame that statically transforms
+				to L frame, (QFL constant). K is a coordinate system associated with F.
 
 Author: JDev 161115
 	
@@ -99,36 +127,69 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat SOCO;
-	Mat QCL = Mat::zeros(4,1,CV_64F);
+	Mat SOCC;
+	Mat QCO;
+	tf::Quaternion tfQBL;
+	tf::Quaternion tfQCB;
+	geometry_msgs::Quaternion gmQBL;
+	geometry_msgs::Quaternion gmQCB;
+
+	// Initialisation - perform on first callback
+	if (firstOdom){
+		// Convert tfTBL to tf::Quaternion, then geometry_msgs::Quaternion, then back to cv::Mat TBL
+		tfQBL = tfTBL.getRotation();
+		tf::quaternionTFToMsg(tfQBL, gmQBL);
+		QBL.push_back(gmQBL.w); QBL.push_back(gmQBL.x);
+		QBL.push_back(gmQBL.y); QBL.push_back(gmQBL.z);
+		TBL = quat2dcm(QBL);
+		
+		// Obtain TCB from tfTCB
+		tfQCB = tfTCB.getRotation();
+		tf::quaternionTFToMsg(tfQCB, gmQCB);
+		QCB.push_back(gmQCB.w); QCB.push_back(gmQCB.x);
+		QCB.push_back(gmQCB.y); QCB.push_back(gmQCB.z);
+		TCB = quat2dcm(QCB);
+		
+		firstOdom = false;
+	}
 	
 	// Process
 	// Obtain SOCO
-	SOCO.push_back(odomMsg->pose.pose.position.x);
-	SOCO.push_back(odomMsg->pose.pose.position.y);
-	SOCO.push_back(odomMsg->pose.pose.position.z);
+	SOCC.push_back(odomMsg->pose.pose.position.x);
+	SOCC.push_back(odomMsg->pose.pose.position.y);
+	SOCC.push_back(odomMsg->pose.pose.position.z);
 	
 	// Notify user that CB functon has been entered
-	ROS_INFO("[teach_node] SOCO: [%f,%f,%f]", SOCO.at<double>(0), SOCO.at<double>(1), SOCO.at<double>(2));
+	ROS_INFO("[teach_node] SOCO: [%f,%f,%f]", SOCC.at<double>(0), SOCC.at<double>(1), SOCC.at<double>(2));
 	
-	// Get TCL from quaternion in odomMsg
+	// Get TCO from quaternion in odomMsg
+	QCO.push_back(odomMsg->pose.pose.orientation.x); 
+	QCO.push_back(odomMsg->pose.pose.orientation.y); 
+	QCO.push_back(odomMsg->pose.pose.orientation.z); 
+	QCO.push_back(odomMsg->pose.pose.orientation.w); 
 	
-	QCL.push_back(odomMsg->pose.pose.orientation.w); 
-		
-	QCL.push_back(odomMsg->pose.pose.orientation.x); 
+	// Output Quaternion for debugging
+	//ROS_INFO("[teach_node] QCO: [%f,%f,%f,%f]", QCO.at<double>(0), QCO.at<double>(1), QCO.at<double>(2), QCO.at<double>(3));
 	
-	QCL.push_back(odomMsg->pose.pose.orientation.y); QCL.push_back(odomMsg->pose.pose.orientation.z); 
+	// Have TCB (const), TBL (from TF), TCO (from VO ^), TOL (from TCB, TBL), TBL
+	TOChat = quat2dcm(QCO).t();
+	// Obtain TCLhat (estimated TCL from VO)
+	TOBhat = TOChat*TCB;			// This is NOT constant
+	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt T
+	TCLhat = TOBhat.t()*TCB;		// TCL = TBO*TCB -> From VO
+	
+	TCL = TCB*TBL; 					// Truth
 	
 	// TODO: Convert QCM to a tf::quaternion and set TCL as a tf::matrix3x3
-	TCL = Mat::eye(3,3,CV_64F);
+		// TCL = tf::matrix3x3(odomMsg->pose.pose.orientation)?
 	
 
 	
 	// Transform SOCO from O frame to L frame
-	ROS_INFO("DEBUG: size(TCL): %d %d", TCL.rows, TCL.cols);
-	ROS_INFO("DEBUG: size(SOCO): %d %d", SOCO.rows, SOCO.cols);
-	SOCL = TCL.t()*SOCO;
-	ROS_INFO("DEBUG: Made it here.");
+	SOCL = TCLhat.t()*SOCC;
+	
+	// Output SOCL to WS
+	ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCL.at<double>(0), SOCL.at<double>(1), SOCL.at<double>(2));
 	
 	// Push poses back into vectors
 	vecSOCL.push_back(SOCL);
@@ -171,10 +232,14 @@ int main(int argc, char **argv){
 	// Create node handle
 	ros::NodeHandle nh;
 
-	// Local variables
+	// Local ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber landSub;	// Landing subscriber
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
+	tf::TransformListener TBLlistener;
+	tf::TransformListener TCBlistener;
+	
+	// Local variables
 	Mat oldSOCL = Mat::zeros(3,1,CV_64F);
 	
 	
@@ -202,6 +267,27 @@ int main(int argc, char **argv){
 		// BG. Obtain TCL from VO(RTABMAP publishes VO to /odom topic) //
 		// BG. Obtain SOCL from VO	//
 		
+		// TODO: Waypoint navigation in teach node.
+		
+		// Listen for TBL from TF
+		try {
+			TBLlistener.lookupTransform("/base_link", "/world", ros::Time(0), tfTBL);
+		} catch (tf::TransformException &ex) {
+			ROS_ERROR("%s",ex.what());
+     		ros::Duration(1.0).sleep();
+      		continue;
+		}
+		
+		// Listen for TCB from TF
+		try {
+			TCBlistener.lookupTransform("/camera_link", "/base_link", ros::Time(0), tfTCB);
+		} catch (tf::TransformException &ex) {
+			ROS_ERROR("%s",ex.what());
+     		ros::Duration(1.0).sleep();
+      		continue;
+		}
+		
+		// Check to see if we need a new map
 		if (norm(oldSOCL - SOCL) > 2.0){		// |oldSOCL - SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.

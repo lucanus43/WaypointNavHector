@@ -38,6 +38,7 @@ double const DEG = 180 / CV_PI;		// Convert rad->deg
 Mat dcm2angle(Mat DCM);
 Mat dcm2quat(Mat DCM);
 Mat quat2eul(Mat QUAT);
+Mat quat2dcm(Mat quat)
 Mat eul2quat(Mat Eul);
 Mat ang2dcm(Mat Eul);
 double integrate(const double &dydx_new, const double &dydx, const double &y, const double &int_step);

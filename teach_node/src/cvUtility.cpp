@@ -33,6 +33,7 @@ Mat dcm2angle(Mat DCM) {
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // Converts a DCM to quaternion
+// Output quaternion as [w,x,y,z] format
 //
 // Jeffrey Devaraj 12/07/16
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -47,6 +48,40 @@ Mat dcm2quat(Mat DCM) {
 
 	return Q;
 }
+
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// Converts a quaternion to DCM
+// Input quaternion as [x,y,z,w] format
+//
+// Jeffrey Devaraj 21/11/16
+//////////////////////////////////////////////////////////////////////////////////////////////
+Mat quat2dcm(Mat quat) {
+	// local variables
+	Mat DCM = Mat::zeros(3, 3, CV_64F);
+	Mat Q;
+
+	// Input quaternion is in form [x,y,z,w]. Change to [w,x,y,z] and perform
+	// conversion as per MATLAB quat2dcm()
+	Q.at<double>(0) = quat.at<double>(3);
+	Q.at<double>(1) = quat.at<double>(0);
+	Q.at<double>(2) = quat.at<double>(1);
+	Q.at<double>(3) = quat.at<double>(2);
+	
+	DCM.at<double>(0,0) = pow(Q.at<double>(0),2) + pow(Q.at<double>(1),2) - pow(Q.at<double>(2),2) - pow(Q.at<double>(3),2);
+	DCM.at<double>(0,1) = 2*(Q.at<double>(1)*Q.at<double>(2) + Q.at<double>(0)*Q.at<double>(3));
+	DCM.at<double>(0,2) = 2*(Q.at<double>(1)*Q.at<double>(3) - Q.at<double>(0)*Q.at<double>(2));
+	DCM.at<double>(1,0) = 2*(Q.at<double>(1)*Q.at<double>(2) - Q.at<double>(0)*Q.at<double>(3));
+	DCM.at<double>(1,1) = pow(Q.at<double>(0),2) - pow(Q.at<double>(1),2) + pow(Q.at<double>(2),2) - pow(Q.at<double>(3),2);
+	DCM.at<double>(1,2) = 2*(Q.at<double>(2)*Q.at<double>(3) + Q.at<double>(0)*Q.at<double>(1));	
+	DCM.at<double>(2,0) = 2*(Q.at<double>(1)*Q.at<double>(3) + Q.at<double>(0)*Q.at<double>(2));
+	DCM.at<double>(2,1) = 2*(Q.at<double>(2)*Q.at<double>(3) - Q.at<double>(0)*Q.at<double>(1));
+	DCM.at<double>(2,2) = pow(Q.at<double>(0),2) - pow(Q.at<double>(1),2) - pow(Q.at<double>(2),2) + pow(Q.at<double>(3),2);
+	
+	return DCM;
+}
+
 
 ////////////////////////////////////////////////////////////////////////////////
 //Returns a quaternion constructed from Euler angles
