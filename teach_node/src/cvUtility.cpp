@@ -60,7 +60,7 @@ Mat dcm2quat(Mat DCM) {
 Mat quat2dcm(Mat quat) {
 	// local variables
 	Mat DCM = Mat::zeros(3, 3, CV_64F);
-	Mat Q;
+	Mat Q = Mat::zeros(4,1,CV_64F);
 
 	// Input quaternion is in form [x,y,z,w]. Change to [w,x,y,z] and perform
 	// conversion as per MATLAB quat2dcm()

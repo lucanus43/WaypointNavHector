@@ -62,7 +62,7 @@ using namespace cv;
 	bool firstOdom = true;
 	vector<Mat> vecSOCL;
 	vector<Mat> vecTCL;
-	Mat SOCL = Mat::zeros(3,1,CV_64F);
+	Mat SOCLhat = Mat::zeros(3,1,CV_64F);
 	Mat TCL = Mat::zeros(3,3,CV_64F);
 	Mat TBL;
 	Mat TOBhat;
@@ -70,7 +70,7 @@ using namespace cv;
 	Mat TOChat;
 	Mat TOLhat;
 	Mat TCLhat;
-	Mat QBL;
+	Mat QBL = Mat::zeros(4,1,CV_64F);
 	Mat QCB;
 // ------------------------- CODE ------------------------------ //
 
@@ -127,34 +127,31 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat SOCC;
-	Mat QCO;
+	Mat SOCChat;
+	Mat QCOhat;
 	tf::Quaternion tfQBL;
 	tf::Quaternion tfQCB;
 	geometry_msgs::Quaternion gmQBL;
 	geometry_msgs::Quaternion gmQCB;
-
+	
+	
 	// Initialisation - perform on first callback
 	if (firstOdom){
-		// Convert tfTBL to tf::Quaternion, then geometry_msgs::Quaternion, then back to cv::Mat TBL
-		tfQBL = tfTBL.getRotation();
-		tf::quaternionTFToMsg(tfQBL, gmQBL);
-		QBL.push_back(gmQBL.w); QBL.push_back(gmQBL.x);
-		QBL.push_back(gmQBL.y); QBL.push_back(gmQBL.z);
-		TBL = quat2dcm(QBL);
 		
-		// Obtain TCB from tfTCB
-		tfQCB = tfTCB.getRotation();
-		tf::quaternionTFToMsg(tfQCB, gmQCB);
-		QCB.push_back(gmQCB.w); QCB.push_back(gmQCB.x);
-		QCB.push_back(gmQCB.y); QCB.push_back(gmQCB.z);
+		ROS_INFO("Made it here. Quitting.");
+		quitTeachNode = true;
+		
+		// Obtain TCB (static transform, QCB = [0.000, 0.707, 0.000, 0.707])
+		// TODO: Work out why camera_link to base_link is shown in rqt_tf_tree but lookupTransform() fails?
+		QCB = Mat::zeros(4,1,CV_64F);
+		QCB.at<double>(1) = 0.707; QCB.at<double>(3) = 0.707;
 		TCB = quat2dcm(QCB);
 		
 		firstOdom = false;
 	}
 	
 	// Process
-	// Obtain SOCO
+	// Obtain SOCC
 	SOCChat.push_back(odomMsg->pose.pose.position.x);
 	SOCChat.push_back(odomMsg->pose.pose.position.y);
 	SOCChat.push_back(odomMsg->pose.pose.position.z);
@@ -163,37 +160,57 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
 	
 	// Get TCO from quaternion in odomMsg
-	QCO.push_back(odomMsg->pose.pose.orientation.x); 
-	QCO.push_back(odomMsg->pose.pose.orientation.y); 
-	QCO.push_back(odomMsg->pose.pose.orientation.z); 
-	QCO.push_back(odomMsg->pose.pose.orientation.w); 
+	QCOhat.push_back(odomMsg->pose.pose.orientation.x); 
+	QCOhat.push_back(odomMsg->pose.pose.orientation.y); 
+	QCOhat.push_back(odomMsg->pose.pose.orientation.z); 
+	QCOhat.push_back(odomMsg->pose.pose.orientation.w); 
 	
 	// Output Quaternion for debugging
-	//ROS_INFO("[teach_node] QCO: [%f,%f,%f,%f]", QCO.at<double>(0), QCO.at<double>(1), QCO.at<double>(2), QCO.at<double>(3));
+	ROS_INFO("[teach_node] QCO: [%f,%f,%f,%f]", QCOhat.at<double>(0), QCOhat.at<double>(1), QCOhat.at<double>(2), QCOhat.at<double>(3));
 	
 	// Have TCB (const), TBL (from TF), TCO (from VO ^), TOL (from TCB, TBL), TBL
-	TOChat = quat2dcm(QCO).t();
+	TOChat = quat2dcm(QCOhat).t();
+	
+	// Get TBL from tf
+	// Convert tfTBL to tf::Quaternion, then geometry_msgs::Quaternion, then back to cv::Mat TBL
+	tfQBL = tfTBL.getRotation();
+	tf::quaternionTFToMsg(tfQBL, gmQBL);
+	QBL.at<double>(3) = (gmQBL.w); QBL.at<double>(0) = (gmQBL.x); // QBL [x,y,z,w]
+	QBL.at<double>(1) = (gmQBL.y); QBL.at<double>(2) = (gmQBL.z);
+	cout << "QBL: " << QBL << endl;
+	TBL = quat2dcm(QBL);
+	
 	// Obtain TCLhat (estimated TCL from VO)
 	TOBhat = TOChat*TCB;			// This is NOT constant
-	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt T
-	TCLhat = TOBhat.t()*TCB;		// TCL = TBO*TCB -> From VO
+	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt L
+	TCLhat = TOChat.t()*TOLhat;		// TCL = TCO*TOB // TCL = TCO*TOL -> From VO
 	
+	cout << "TCLhat: " << TCLhat << endl;
+	cout << "TCL: " << TCL << endl;
 	TCL = TCB*TBL; 					// Truth
+	
+	cout << "TOChat: " << TOChat << endl;
+	cout << "TCB: " << TCB << endl;
+	cout << "TOChat*TCB: " << TOChat*TCB << endl;
+	cout << "TOBhat: " << TOBhat << endl;
+	cout << "TOLhat: " << TOLhat << endl;
+	cout << "TBL: " << TBL << endl;
+
 	
 	// TODO: Convert QCM to a tf::quaternion and set TCL as a tf::matrix3x3
 		// TCL = tf::matrix3x3(odomMsg->pose.pose.orientation)?
 	
-
+	// TODO: Get SOLL for map.
 	
 	// Transform SOCO from O frame to L frame
-	SOCLhat = TCLhat.t()*SOCC;
+	SOCLhat = TCLhat.t()*SOCChat;
 	
 	// Output SOCL to WS
-	ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCL.at<double>(0), SOCL.at<double>(1), SOCL.at<double>(2));
+	ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
 	
 	// Push poses back into vectors
-	vecSOCL.push_back(SOCL);
-	vecTCL.push_back(TCL);
+	vecSOCL.push_back(SOCLhat);
+	vecTCL.push_back(TCLhat);
 }
 
 
@@ -237,7 +254,7 @@ int main(int argc, char **argv){
 	ros::Subscriber landSub;	// Landing subscriber
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
 	tf::TransformListener TBLlistener;
-	tf::TransformListener TCBlistener;
+	//tf::TransformListener TCBlistener;
 	
 	// Local variables
 	Mat oldSOCL = Mat::zeros(3,1,CV_64F);
@@ -269,26 +286,29 @@ int main(int argc, char **argv){
 		
 		// TODO: Waypoint navigation in teach node.
 		
+		// Listen for TCB from TF
+		/*try {
+			TCBlistener.waitForTransform("base_link", "camera_link", ros::Time(0), ros::Duration(0.5));
+			TCBlistener.lookupTransform("base_link", "camera_link", ros::Time(0), tfTCB);
+		} catch (tf::TransformException &ex) {
+			ROS_ERROR("%s",ex.what());
+     		ros::Duration(1.0).sleep();
+      		continue;
+		}*/
+		
 		// Listen for TBL from TF
 		try {
-			TBLlistener.lookupTransform("/base_link", "/world", ros::Time(0), tfTBL);
+			TBLlistener.waitForTransform("world", "base_link", ros::Time(0), ros::Duration(0.5));
+			TBLlistener.lookupTransform("world", "base_link", ros::Time(0), tfTBL);
 		} catch (tf::TransformException &ex) {
 			ROS_ERROR("%s",ex.what());
      		ros::Duration(1.0).sleep();
       		continue;
 		}
-		
-		// Listen for TCB from TF
-		try {
-			TCBlistener.lookupTransform("/camera_link", "/base_link", ros::Time(0), tfTCB);
-		} catch (tf::TransformException &ex) {
-			ROS_ERROR("%s",ex.what());
-     		ros::Duration(1.0).sleep();
-      		continue;
-		}
+	
 		
 		// Check to see if we need a new map
-		if (norm(oldSOCL - SOCL) > 2.0){		// |oldSOCL - SOCL| > 2 m
+		if (norm(oldSOCL - SOCLhat) > 2.0){		// |oldSOCL - SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			saveMap = true;
@@ -299,7 +319,7 @@ int main(int argc, char **argv){
 			if (!resetMapClient.call(resetMapReq, resetMapResp)){
 				ROS_INFO("[teach_node] Failed to reset map client.");
 			}
-			oldSOCL = SOCL;
+			oldSOCL = SOCLhat;
 		}// endif
 		ros::spin();
 	}// end loop
