@@ -131,7 +131,7 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat SOCChat;
+	Mat SOCChat = Mat::zeros(3,1,CV_64F);
 	Mat QCOhat;
 	tf::Quaternion tfQBL;
 	tf::Quaternion tfQCB;
@@ -156,9 +156,9 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	// Process
 	// Obtain SOCC
-	SOCChat.push_back(odomMsg->pose.pose.position.x);
-	SOCChat.push_back(odomMsg->pose.pose.position.y);
-	SOCChat.push_back(odomMsg->pose.pose.position.z);
+	SOCChat.at<double>(0) = (odomMsg->pose.pose.position.x);
+	SOCChat.at<double>(1) = (odomMsg->pose.pose.position.y);
+	SOCChat.at<double>(2) = (odomMsg->pose.pose.position.z);
 	
 	// Notify user that CB functon has been entered
 	//ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
@@ -189,8 +189,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt L
 	TCLhat = TOChat.t()*TOLhat;		// TCL = TCO*TOB // TCL = TCO*TOL -> From VO
 	
-	cout << "TCLhat: " << TCLhat << endl;
-	cout << "TCL: " << TCL << endl;
+	//cout << "TCLhat: " << TCLhat << endl;
+	//cout << "TCL: " << TCL << endl;
 	TCL = TCB*TBL; 					// Truth
 	
 	//cout << "TOChat: " << TOChat << endl;
@@ -266,9 +266,9 @@ int main(int argc, char **argv){
 	Mat oldSOCL = Mat::zeros(3,1,CV_64F);
 	
 	
-	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("trigger_new_map");
-	std_srvs::Empty::Request resetMapReq;
-	std_srvs::Empty::Response resetMapResp;
+	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
+	ros::ServiceClient resetOdometryClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom");
+	std_srvs::Empty emptySrv;
 	
 	// Process:
 	
@@ -308,7 +308,6 @@ int main(int argc, char **argv){
 		}*/
 		
 		// Listen for TBL from TF
-		//cout << "Updating tfTBL" << endl;
 		try {
 			TBLlistener.waitForTransform("world", "base_link", ros::Time::now(), ros::Duration(0.5));
 			TBLlistener.lookupTransform("world", "base_link", ros::Time(0), tfTBL);
@@ -320,7 +319,7 @@ int main(int argc, char **argv){
 	
 		
 		// Check to see if we need a new map
-		if (fabs(norm(oldSOCL - SOCLhat)) > 2.0){		// |oldSOCL - SOCL| > 2 m
+		if (fabs(norm(SOCLhat)) > 2.0){		// |SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
@@ -328,10 +327,20 @@ int main(int argc, char **argv){
 			// Reset vecSOCL and vecTCL
 			vecSOCL.clear();
 			vecTCL.clear();
-			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
-			if (!resetMapClient.call(resetMapReq, resetMapResp)){
-				ROS_INFO("[teach_node] Failed to reset map client.");
+			// TODO: Reset odometry
+			if (!resetOdometryClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset odometry.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting dometry.");
 			}
+			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+			if (!resetMapClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset map.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting map.");
+			}
+			
+			
 			oldSOCL = SOCLhat;
 		}// endif
 		ros::spinOnce();
