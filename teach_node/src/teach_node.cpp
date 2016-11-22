@@ -233,11 +233,11 @@ Author: JDev 161109
 // -------------------------------------------------------------
 void landingCallBack(const hector_uav_msgs::LandingActionGoalConstPtr& landingPose){
 	// Set quitImageTransport to true
-	quitTeachNode = true;
+	//quitTeachNode = true;
 	// Destroy view
-	ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
+	//ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
 	// Exit
-	ros::shutdown();
+	//ros::shutdown();
 }
 
 
@@ -287,7 +287,8 @@ int main(int argc, char **argv){
 	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
 	
 	// Loop (till waypoints are complete/landing initiated)
-	while(ros::ok() && !quitTeachNode){
+	//ros::Rate rate(10.0);
+	while(nh.ok()){
 		// BG. Perform Waypoint navigation. (Build a launch file that launches waypointnav) //
 		// BG. Rtabmap point cloud building in background (rosspawn? Need VO) //
 		
@@ -307,18 +308,19 @@ int main(int argc, char **argv){
 		}*/
 		
 		// Listen for TBL from TF
+		//cout << "Updating tfTBL" << endl;
 		try {
-			TBLlistener.waitForTransform("world", "base_link", ros::Time(0), ros::Duration(0.5));
+			TBLlistener.waitForTransform("world", "base_link", ros::Time::now(), ros::Duration(0.5));
 			TBLlistener.lookupTransform("world", "base_link", ros::Time(0), tfTBL);
-		} catch (tf::TransformException &ex) {
+		} catch (tf2::TransformException &ex) {
 			ROS_ERROR("%s",ex.what());
-     		ros::Duration(1.0).sleep();
-      		continue;
+     		//ros::Duration(1.0).sleep();
+      		//continue;
 		}
 	
 		
 		// Check to see if we need a new map
-		if (norm(oldSOCL - SOCLhat) > 2.0){		// |oldSOCL - SOCL| > 2 m
+		if (fabs(norm(oldSOCL - SOCLhat)) > 2.0){		// |oldSOCL - SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
@@ -332,7 +334,8 @@ int main(int argc, char **argv){
 			}
 			oldSOCL = SOCLhat;
 		}// endif
-		ros::spin();
+		ros::spinOnce();
+		//rate.sleep();
 	}// end loop
 }
 
