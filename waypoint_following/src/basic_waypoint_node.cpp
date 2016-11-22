@@ -99,15 +99,24 @@ void generate_waypoints() {
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 4
-	/*tmp_wp.position.x = -1.0;	//[-1, -5, 50]
-	tmp_wp.position.y = -1.0;
+	tmp_wp.position.x = 3.0;	//[3, 0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 5
-	tmp_wp.position.x = -1.0;	//[0, 0, 50]
-	tmp_wp.position.y = 0.0;
+	tmp_wp.position.x = 2.0;	//[0, 0, 5.0]
+	//tmp_wp.position.y = 0.0;
 	waypoints.push_back(tmp_wp);
-	*/
+	
+	//Waypoint 6
+	tmp_wp.position.x = 1.0;	//[0, 0, 5.0]
+	//tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 7
+	tmp_wp.position.x = 0.0;	//[0, 0, 5.0]
+	//tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
 	
 }
 

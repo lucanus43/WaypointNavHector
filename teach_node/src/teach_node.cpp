@@ -189,8 +189,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt L
 	TCLhat = TOChat.t()*TOLhat;		// TCL = TCO*TOB // TCL = TCO*TOL -> From VO
 	
-	//cout << "TCLhat: " << TCLhat << endl;
-	//cout << "TCL: " << TCL << endl;
+	cout << "TCLhat: " << TCLhat << endl;
+	cout << "TCL: " << TCL << endl;
 	TCL = TCB*TBL; 					// Truth
 	
 	//cout << "TOChat: " << TOChat << endl;
@@ -282,6 +282,9 @@ int main(int argc, char **argv){
 	
 	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
 	oldSOCL = SOCLhat;
+	
+	// Notify user of initialisation
+	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
 	
 	// Loop (till waypoints are complete/landing initiated)
 	while(ros::ok() && !quitTeachNode){

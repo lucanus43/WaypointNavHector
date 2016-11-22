@@ -102,7 +102,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	
     	// TODO: Update file naming
     	  pcl::io::savePCDFileASCII ("test_pcd.pcd", *temp_cloud);
-    	  std::cerr << "Saved " << temp_cloud.points.size () << " data points to test_pcd.pcd." << std::endl;
+    	  std::cerr << "Saved " << temp_cloud->points.size () << " data points to test_pcd.pcd." << std::endl;
     	// Save map here.
     	//..
     	
@@ -282,6 +282,9 @@ int main(int argc, char **argv){
 	
 	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
 	oldSOCL = SOCLhat;
+	
+	// Notify user of initialisation
+	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
 	
 	// Loop (till waypoints are complete/landing initiated)
 	while(ros::ok() && !quitTeachNode){
