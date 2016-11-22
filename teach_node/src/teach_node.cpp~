@@ -30,6 +30,7 @@ Date: 161114
 #include "hector_uav_msgs/LandingAction.h"
 // PCL includes
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/io/pcd_io.h>
 #include <pcl/point_types.h>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/conversions.h>
@@ -91,14 +92,17 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	pcl::PCLPointCloud2 pcl_pc2;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
     
+    // Notify user of entering function
+    ROS_INFO("[teach_node] Entered cloudCallBack.");
+    
     // If saveMap is true, then save map to file and set saveMap = false
     if (saveMap){
     	pcl_conversions::toPCL(*input,pcl_pc2);
     	pcl::fromPCLPointCloud2(pcl_pc2,*temp_cloud);
     	
-    	// Update file naming
-    	// ..
-    	
+    	// TODO: Update file naming
+    	  pcl::io::savePCDFileASCII ("test_pcd.pcd", *temp_cloud);
+    	  std::cerr << "Saved " << temp_cloud.points.size () << " data points to test_pcd.pcd." << std::endl;
     	// Save map here.
     	//..
     	
@@ -138,8 +142,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Initialisation - perform on first callback
 	if (firstOdom){
 		
-		ROS_INFO("Made it here. Quitting.");
-		quitTeachNode = true;
+		//ROS_INFO("Made it here. Quitting.");
+		//quitTeachNode = true;
 		
 		// Obtain TCB (static transform, QCB = [0.000, 0.707, 0.000, 0.707])
 		// TODO: Work out why camera_link to base_link is shown in rqt_tf_tree but lookupTransform() fails?
@@ -157,7 +161,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SOCChat.push_back(odomMsg->pose.pose.position.z);
 	
 	// Notify user that CB functon has been entered
-	ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
+	//ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
 	
 	// Get TCO from quaternion in odomMsg
 	QCOhat.push_back(odomMsg->pose.pose.orientation.x); 
@@ -166,7 +170,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	QCOhat.push_back(odomMsg->pose.pose.orientation.w); 
 	
 	// Output Quaternion for debugging
-	ROS_INFO("[teach_node] QCO: [%f,%f,%f,%f]", QCOhat.at<double>(0), QCOhat.at<double>(1), QCOhat.at<double>(2), QCOhat.at<double>(3));
+	//ROS_INFO("[teach_node] QCO: [%f,%f,%f,%f]", QCOhat.at<double>(0), QCOhat.at<double>(1), QCOhat.at<double>(2), QCOhat.at<double>(3));
 	
 	// Have TCB (const), TBL (from TF), TCO (from VO ^), TOL (from TCB, TBL), TBL
 	TOChat = quat2dcm(QCOhat).t();
@@ -177,25 +181,25 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	tf::quaternionTFToMsg(tfQBL, gmQBL);
 	QBL.at<double>(3) = (gmQBL.w); QBL.at<double>(0) = (gmQBL.x); // QBL [x,y,z,w]
 	QBL.at<double>(1) = (gmQBL.y); QBL.at<double>(2) = (gmQBL.z);
-	cout << "QBL: " << QBL << endl;
-	TBL = quat2dcm(QBL);
+	//cout << "QBL: " << QBL << endl;
+	TBL = quat2dcm(QBL);			// Truth
 	
 	// Obtain TCLhat (estimated TCL from VO)
 	TOBhat = TOChat*TCB;			// This is NOT constant
 	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt L
 	TCLhat = TOChat.t()*TOLhat;		// TCL = TCO*TOB // TCL = TCO*TOL -> From VO
 	
-	cout << "TCLhat: " << TCLhat << endl;
-	
+	//cout << "TCLhat: " << TCLhat << endl;
+	//cout << "TCL: " << TCL << endl;
 	TCL = TCB*TBL; 					// Truth
 	
-	cout << "TOChat: " << TOChat << endl;
-	cout << "TCB: " << TCB << endl;
-	cout << "TOChat*TCB: " << TOChat*TCB << endl;
-	cout << "TOBhat: " << TOBhat << endl;
-	cout << "TOLhat: " << TOLhat << endl;
-	cout << "TBL: " << TBL << endl;
-	cout << "TCL: " << TCL << endl;
+	//cout << "TOChat: " << TOChat << endl;
+	//cout << "TCB: " << TCB << endl;
+	//cout << "TOChat*TCB: " << TOChat*TCB << endl;
+	//cout << "TOBhat: " << TOBhat << endl;
+	//cout << "TOLhat: " << TOLhat << endl;
+	//cout << "TBL: " << TBL << endl;
+
 	
 	// TODO: Convert QCM to a tf::quaternion and set TCL as a tf::matrix3x3
 		// TCL = tf::matrix3x3(odomMsg->pose.pose.orientation)?
@@ -206,9 +210,11 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SOCLhat = TCLhat.t()*SOCChat;
 	
 	// Output SOCL to WS
-	ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
+	//ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
 	
 	// Push poses back into vectors
+	// TODO: Only save poses when a certain distance has been travelled or angular change has been observed.
+	// For now only save SOCL and TCL (camera pose wrt. local level frame).
 	vecSOCL.push_back(SOCLhat);
 	vecTCL.push_back(TCLhat);
 }
@@ -275,6 +281,7 @@ int main(int argc, char **argv){
 	cloudSub = nh.subscribe("/cloud_map", 1000, cloudCallBack);
 	
 	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
+	oldSOCL = SOCLhat;
 	
 	// Loop (till waypoints are complete/landing initiated)
 	while(ros::ok() && !quitTeachNode){
@@ -311,6 +318,7 @@ int main(int argc, char **argv){
 		if (norm(oldSOCL - SOCLhat) > 2.0){		// |oldSOCL - SOCL| > 2 m
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
+			ROS_INFO("[teach_node] Saving map to file.");
 			saveMap = true;
 			// Reset vecSOCL and vecTCL
 			vecSOCL.clear();

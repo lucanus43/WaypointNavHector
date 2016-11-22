@@ -110,7 +110,7 @@ find_package( OpenCV REQUIRED )
 catkin_package(
   INCLUDE_DIRS include
  # LIBRARIES cvUtility map_packaging
-  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros #pcl
+  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros pcl
   DEPENDS system_lib OpenCV
 )
 
@@ -133,7 +133,7 @@ include_directories(
 # )
 
 add_library(cvUtility src/cvUtility.cpp)
-add_library(map_packaging src/map_packaging.cpp)
+add_library(map_packaging src/map_packaging.cpp src/cvUtility.cpp)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries

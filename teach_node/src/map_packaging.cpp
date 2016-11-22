@@ -17,7 +17,16 @@ Date: 161114
 
 // ------------------------- CODE ------------------------------ //
 
+// -------------------------------------------------------------
+/*
+packageMap - Packages a map (saves displacements and transforms to a text file)
+				C: Camera frame
+				A: Arbitrary second frame
 
+Author: JDev 161108
+	
+*/
+// -------------------------------------------------------------
 void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){	
 	// Local variables
 	Mat TCS = Mat::eye(3,3,CV_64F); // Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.

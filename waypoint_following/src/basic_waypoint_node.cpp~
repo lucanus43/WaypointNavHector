@@ -91,7 +91,7 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = 1.0;	//[0, 0, 6.0]
+	tmp_wp.position.z = 6.0;	//[0, 0, 6.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 3
