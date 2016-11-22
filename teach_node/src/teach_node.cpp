@@ -2,6 +2,10 @@
    
 Desc:	Performs the teach node for visual teach and repeat implementation.
 		Note: BG. - Background tasks
+		
+		TODO: Save poses in discrete intervals or if an intentional pose change is performed.
+		TODO: 
+		
 
 Author: Jeffrey Devaraj
 Date: 161114 
@@ -58,7 +62,7 @@ using namespace cv;
 
 // Map packaging variables
 	bool saveMap = false;
-
+	bool resetVars = false;
 // Odometry variables
 	bool firstOdom = true;
 	vector<Mat> vecSOCL;
@@ -112,6 +116,8 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	
     	// Set saveMap to false
     	saveMap = false;
+    	// Set resetVars to true
+    	resetVars = true;
     }
 }
 
@@ -278,7 +284,7 @@ int main(int argc, char **argv){
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1000, odomCallBack);
 	// Subscribe to cloud_map topic
-	cloudSub = nh.subscribe("/cloud_map", 1000, cloudCallBack);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	
 	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
 	oldSOCL = SOCLhat;
@@ -324,24 +330,26 @@ int main(int argc, char **argv){
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
 			saveMap = true;
-			// Reset vecSOCL and vecTCL
-			vecSOCL.clear();
-			vecTCL.clear();
-			// TODO: Reset odometry
-			if (!resetOdometryClient.call(emptySrv)){
-				ROS_INFO("[teach_node] Failed to reset odometry.");
-			} else {
-				ROS_INFO("[teach_node] Succeeded in resetting dometry.");
-			}
-			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
-			if (!resetMapClient.call(emptySrv)){
-				ROS_INFO("[teach_node] Failed to reset map.");
-			} else {
-				ROS_INFO("[teach_node] Succeeded in resetting map.");
-			}
-			
-			
-			oldSOCL = SOCLhat;
+			// TODO: Save map before resetting (reset on next iteration)
+			// Map will be reset on next call to cloudCallBack
+			if (resetVars){
+				// Reset vecSOCL and vecTCL
+				vecSOCL.clear();
+				vecTCL.clear();
+				// Reset odometry
+				if (!resetOdometryClient.call(emptySrv)){
+					ROS_INFO("[teach_node] Failed to reset odometry.");
+				} else {
+					ROS_INFO("[teach_node] Succeeded in resetting dometry.");
+				}
+				// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+				if (!resetMapClient.call(emptySrv)){
+					ROS_INFO("[teach_node] Failed to reset map.");
+				} else {
+					ROS_INFO("[teach_node] Succeeded in resetting map.");
+				}
+				resetVars = false;
+			}// endif
 		}// endif
 		ros::spinOnce();
 		//rate.sleep();
