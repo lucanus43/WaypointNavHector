@@ -114,7 +114,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	mapfileName.str(std::string());	// Clear stringstream
     	mapfileName << "submap_" << fileCounter << ".pcd";
     	pcl::io::savePCDFileASCII (mapfileName.str().c_str(), *temp_cloud);
-    	std::cerr << "Saved " << temp_cloud->points.size () << " data points to test_pcd.pcd." << std::endl;
+    	std::cerr << "Saved " << temp_cloud->points.size() << " data points to " << mapfileName.str() << std::endl;
     	// Save map here.
     	//..
     	
@@ -233,18 +233,18 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SOCLhat = TCLhat.t()*SOCChat;
 	
 	// Output SOCL to WS
-	ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
+	//ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
 	
 	// Push poses back into vectors
 	// TODO: Only save poses when a certain distance has been travelled or angular change has been observed.
 	// For now only save SOCL and TCL (camera pose wrt. local level frame).
-	cout << "SOCLhat: " << SOCLhat << endl;
-	vecSOCL.push_back(SOCLhat);
-	vecTCL.push_back(TCLhat);
+	//cout << "SOCLhat: " << SOCLhat << endl;
+	vecSOCL.push_back(SOCLhat.clone());
+	vecTCL.push_back(TCLhat.clone());
 	
 	// TODO: why is vecSOCL getting the same SOCLhat value pushed to all of it?
 	// debug - output vecSOCL to screen
-		cout << "vecSOCL[" << vecSOCL.size()-1 << "]: " << vecSOCL[vecSOCL.size()-1] << endl;
+		//cout << "vecSOCL[" << vecSOCL.size()-1 << "]: " << vecSOCL[vecSOCL.size()-1] << endl;
 }
 
 
@@ -427,7 +427,7 @@ int main(int argc, char **argv){
 	
 		
 		// Check to see if we need a new map
-		if (fabs(norm(SOCLhat)) > 2.0){		// |SOCL| > 2 m
+		if (!saveMap && (fabs(norm(SOCLhat)) > 2.0)){		// |SOCL| > 2 m and map isn't being saved
 			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
@@ -435,11 +435,6 @@ int main(int argc, char **argv){
 			// TODO: Save map before resetting (reset on next iteration)
 			// Map will be reset on next call to cloudCallBack
 			if (resetVars){
-			// debug 
-				for (int j = 0; j < vecSOCL.size(); j++){
-					cout << "vecSOCL[" << j << "]: " << vecSOCL[j] << endl;
-				}
-			
 				// Reset odometry
 				if (!resetOdometryClient.call(emptySrv)){
 					ROS_INFO("[teach_node] Failed to reset odometry.");

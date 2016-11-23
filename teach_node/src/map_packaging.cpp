@@ -21,7 +21,10 @@ Date: 161114
 /*
 packageMap - Packages a map (saves displacements and transforms to a text file)
 				C: Camera frame
-				A: Arbitrary second frame
+				O: Odometry frame
+				L: Local level frame
+				
+				// TODO: FIX THIS CODE UP. Output is NOT SCAA - output is SOCL
 
 Author: JDev 161108
 	
@@ -69,8 +72,8 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, string poseFileName){
 		
 		// Obtain SCAA and TCA from stored vectors
 		SCAA = vecSCAA[i];
-		cout << "SCAA: " << SCAA << endl;
-		cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
+		//cout << "SCAA: " << SCAA << endl;
+		//cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
 		TCA = vecTCA[i];
 		// Calculate TCS
 		TCS = TCA*TAS;		// TAS is constant for each subframe

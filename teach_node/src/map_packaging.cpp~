@@ -60,7 +60,7 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, string poseFileName){
 	
 	// Loop
 	// for each pose (Cx) stored in some arbitrary frame SCAA/QCAA: 
-	for (int i = 1; i < vecSCAA.size(); i++){
+	for (int i = 0; i < vecSCAA.size(); i++){
 		// SCAA << file
 		// TCA << file
 		// TCS = TCA*TAS;				// TAS is const.
@@ -69,8 +69,8 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, string poseFileName){
 		
 		// Obtain SCAA and TCA from stored vectors
 		SCAA = vecSCAA[i];
-		cout << "SCAA: " << SCAA << endl;
-		cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
+		//cout << "SCAA: " << SCAA << endl;
+		//cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
 		TCA = vecTCA[i];
 		// Calculate TCS
 		TCS = TCA*TAS;		// TAS is constant for each subframe
