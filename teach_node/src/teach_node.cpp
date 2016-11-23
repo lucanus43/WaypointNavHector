@@ -56,10 +56,12 @@ using namespace cv;
 
 // Main variables
 	bool quitTeachNode = false;
-
+	bool firstTakeOff = true;
 	tf::StampedTransform tfTBL;
 	tf::StampedTransform tfTCB;
-
+	Mat SBLL = Mat::zeros(3,1,CV_64F);
+	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F); // TODO: Change convention here for commanded values
+	double wp_radius = 0.1;
 // Map packaging variables
 	bool saveMap = false;
 	bool resetVars = false;
@@ -241,11 +243,54 @@ void landingCallBack(const hector_uav_msgs::LandingActionGoalConstPtr& landingPo
 	// Set quitImageTransport to true
 	//quitTeachNode = true;
 	// Destroy view
+	ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
+	// Exit
+	//ros::shutdown();
+}
+
+
+// -------------------------------------------------------------
+/*
+takeoffCallBack- 	Called when takeoff action is called.
+					Enables main loop
+			TODO: Use standard callback for generic message
+				takeoffCallBack(const std_msgs::Empty msg)
+
+Author: JDev 161123
+	
+*/
+// -------------------------------------------------------------
+void takeoffCallBack(const std_msgs::Empty msg){
+	// Set takeOff to true
+	ROS_INFO("[teach_node] First takeoff called.");
+	firstTakeOff = false;
+	// Destroy view
 	//ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
 	// Exit
 	//ros::shutdown();
 }
 
+
+// -------------------------------------------------------------
+/*
+cmdPoseCallBack- 	Called when a commanded pose is received
+
+Author: JDev 161123
+	
+*/
+// -------------------------------------------------------------
+void cmdPoseCallBack(const geometry_msgs::PoseStamped::ConstPtr& cmd_pos ){
+	// Notify user of function enter
+	ROS_INFO("[teach_node] Cmd pose received.");
+	
+	// cmd pose in L frame/coords.
+	SBLL_cmd.at<double>(0) = cmd_pos->pose.position.x;
+	SBLL_cmd.at<double>(1) = cmd_pos->pose.position.y;
+	SBLL_cmd.at<double>(2) = cmd_pos->pose.position.z;
+	
+	// When first waypoint is reached set firsTakeOff to false
+	//firstTakeOff = false;
+}
 
 // -------------------------------------------------------------
 /*
@@ -264,6 +309,8 @@ int main(int argc, char **argv){
 	// Local ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber landSub;	// Landing subscriber
+	ros::Subscriber takeOffSub; // TakeOff subscriber
+	ros::Subscriber cmdPoseSub;	// Commanded pose subscriber
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
 	tf::TransformListener TBLlistener;
 	//tf::TransformListener TCBlistener;
@@ -281,6 +328,10 @@ int main(int argc, char **argv){
 	// Initialisation:
 	// Subscribe to landing action topic
 	landSub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
+	// Subscribe to takeoff action topic
+	takeOffSub = nh.subscribe("action/takeoff/status", 1000, takeoffCallBack);
+	// Command Pose subscriber
+	cmdPoseSub = nh.subscribe("/command/pose", 1000, cmdPoseCallBack);
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1000, odomCallBack);
 	// Subscribe to cloud_map topic
@@ -292,8 +343,8 @@ int main(int argc, char **argv){
 	// Notify user of initialisation
 	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
 	
-	// Loop (till waypoints are complete/landing initiated)
 	//ros::Rate rate(10.0);
+	// Loop (till waypoints are complete/landing initiated)
 	while(nh.ok()){
 		// BG. Perform Waypoint navigation. (Build a launch file that launches waypointnav) //
 		// BG. Rtabmap point cloud building in background (rosspawn? Need VO) //
@@ -303,6 +354,21 @@ int main(int argc, char **argv){
 		
 		// TODO: Waypoint navigation in teach node.
 		
+		// TODO: Check if VO is lost and reset VO?
+		
+		// TODO: For now, reset odometry when the first waypoint is reached (takeoff)
+		if (firstTakeOff && (fabs(norm(SBLL - SBLL_cmd)) < wp_radius) && norm(SBLL_cmd) > 0.0) {
+			// Check if (SBLL - goal) < threshold
+			
+			// reset odometry
+			if (!resetOdometryClient.call(emptySrv)){
+					ROS_INFO("[teach_node] Failed to reset odometry.");
+				} else {
+					ROS_INFO("[teach_node] Succeeded in resetting odometry.");
+					firstTakeOff = false;
+				}
+			// firstTakeOff set to false when takeoffcallback is called.
+		}
 		// Listen for TCB from TF
 		/*try {
 			TCBlistener.waitForTransform("base_link", "camera_link", ros::Time(0), ros::Duration(0.5));
@@ -317,6 +383,9 @@ int main(int argc, char **argv){
 		try {
 			TBLlistener.waitForTransform("world", "base_link", ros::Time::now(), ros::Duration(0.5));
 			TBLlistener.lookupTransform("world", "base_link", ros::Time(0), tfTBL);
+			SBLL.at<double>(0) = tfTBL.getOrigin().getX(); 
+			SBLL.at<double>(1) = tfTBL.getOrigin().getY(); 
+			SBLL.at<double>(2) = tfTBL.getOrigin().getZ();
 		} catch (tf2::TransformException &ex) {
 			ROS_ERROR("%s",ex.what());
      		//ros::Duration(1.0).sleep();
