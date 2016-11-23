@@ -21,8 +21,11 @@
   	<arg name="queue_size" value="50"/>
   </include>
   	
+  <node pkg="rtabmap_ros" type="rgbd_odometry" name="rgbd_odometry">
+       <param name="Odom/ResetCountdown"              value="1" />
+  </node>
   	
-	<param name="/rgbd_odometry/Odom/ResetCountdown" value="1"/>
+  <node pkg="waypoint_following" type="basic_waypoint_node" name="basic_waypoint_node"/>
 
   <!-- Start rviz visualization with preset config -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_quadrotor_demo)/rviz_cfg/outdoor_flight_asus_cam.rviz"/>

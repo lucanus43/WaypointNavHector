@@ -17,8 +17,17 @@ Date: 161114
 
 // ------------------------- CODE ------------------------------ //
 
+// -------------------------------------------------------------
+/*
+packageMap - Packages a map (saves displacements and transforms to a text file)
+				C: Camera frame
+				A: Arbitrary second frame
 
-void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){	
+Author: JDev 161108
+	
+*/
+// -------------------------------------------------------------
+void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, string poseFileName){	
 	// Local variables
 	Mat TCS = Mat::eye(3,3,CV_64F); // Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
 	Mat TCA = Mat::zeros(3,3,CV_64F);
@@ -28,6 +37,7 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){
 	Mat TAS = Mat::zeros(3,3,CV_64F);
 	Mat TCM = Mat::zeros(3,3,CV_64F);
 	Mat TSM = Mat::zeros(3,3,CV_64F);
+	Mat QCA = Mat::zeros(4,1,CV_64F);
 	// Use initial camera pose to define submap frame. Based on features seen in first pose?
 	
 	
@@ -46,11 +56,11 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){
 	//TSM = TCS.t()*TCM;
 	
 	// Open the output file
-	outputFile.open("submap_poses.txt");
+	outputFile.open(poseFileName.c_str());
 	
 	// Loop
 	// for each pose (Cx) stored in some arbitrary frame SCAA/QCAA: 
-	for (int i0 = 1; i0 < vecSCAA.size(); i0++){
+	for (int i = 1; i < vecSCAA.size(); i++){
 		// SCAA << file
 		// TCA << file
 		// TCS = TCA*TAS;				// TAS is const.
@@ -58,8 +68,10 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){
 		// SCSS = SCAS + SASS;
 		
 		// Obtain SCAA and TCA from stored vectors
-		SCAA = vecSCAA[i0];
-		TCA = vecTCA[i0];
+		SCAA = vecSCAA[i];
+		cout << "SCAA: " << SCAA << endl;
+		cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
+		TCA = vecTCA[i];
 		// Calculate TCS
 		TCS = TCA*TAS;		// TAS is constant for each subframe
 		// Calculate SCAS
@@ -68,9 +80,8 @@ void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA){
 		
 		// Write SCSS and QCS to file
 		// Note: QCS in format qw,qx,qy,qz
-		QCS = dcm2quat(TCS);
-		outputFile << SCSS.at<double>(0) << " " << SCSS.at<double>(1) << " " << SCSS.at<double>(2) << " ";
-		outputFile << QCS.at<double>(0) << " " << QCS.at<double>(1) << " " << QCS.at<double>(2) << " " << QCS.at<double>(3) << endl;
+		QCA = dcm2quat(TCA);
+		outputFile << SCAA.at<double>(0) << " " << SCAA.at<double>(1) << " " << SCAA.at<double>(2) << " " << QCA.at<double>(0) << " " << QCA.at<double>(1) << " " << QCA.at<double>(2) << " " << QCA.at<double>(3) << endl;
 
 	} // end Loop
 	
