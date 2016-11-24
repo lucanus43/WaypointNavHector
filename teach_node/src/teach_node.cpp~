@@ -69,9 +69,9 @@ using namespace cv;
 	bool resetVars = false;
 // Odometry variables
 	bool firstOdom = true;
-	vector<Mat> vecSOCL;
+	vector<Mat> vecSCOL;
 	vector<Mat> vecTCL;
-	Mat SOCLhat = Mat::zeros(3,1,CV_64F);
+	Mat SCOLhat = Mat::zeros(3,1,CV_64F);
 	Mat TCL = Mat::zeros(3,3,CV_64F);
 	Mat TBL;
 	Mat TOBhat;
@@ -83,6 +83,7 @@ using namespace cv;
 	Mat QCB;
 	Mat SCBB = Mat::zeros(3,1,CV_64F);
 	Mat SCLL;
+	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
 // ------------------------- CODE ------------------------------ //
 
 
@@ -124,8 +125,8 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	// Call packageMap and package submap
     	posefileName.str(std::string());	// Clear stringstream
     	posefileName << "pose_" << fileCounter << ".txt";
-		cout << "vecSOCL.size(): " << vecSOCL.size() << endl;
-		packageMap(vecSOCL, vecTCL, SOLLhat, posefileName.str());
+		cout << "vecSCOL.size(): " << vecSCOL.size() << endl;
+		packageMap(vecSCOL, vecTCL, SOLLhat, posefileName.str());
     	
     	// Set saveMap to false
     	saveMap = false;
@@ -152,8 +153,7 @@ Author: JDev 161115
 // -------------------------------------------------------------
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat SOCChat = Mat::zeros(3,1,CV_64F);
-	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
+	Mat SCOChat = Mat::zeros(3,1,CV_64F);
 	Mat QCOhat;
 	tf::Quaternion tfQBL;
 	tf::Quaternion tfQCB;
@@ -178,13 +178,13 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	}
 	
 	// Process
-	// Obtain SOCC
-	SOCChat.at<double>(0) = (odomMsg->pose.pose.position.x);
-	SOCChat.at<double>(1) = (odomMsg->pose.pose.position.y);
-	SOCChat.at<double>(2) = (odomMsg->pose.pose.position.z);
+	// Obtain SCOC
+	SCOChat.at<double>(0) = (odomMsg->pose.pose.position.x);
+	SCOChat.at<double>(1) = (odomMsg->pose.pose.position.y);
+	SCOChat.at<double>(2) = (odomMsg->pose.pose.position.z);
 	
 	// Notify user that CB functon has been entered
-	ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
+	ROS_INFO("[teach_node] SCOC: [%f,%f,%f]", SCOChat.at<double>(0), SCOChat.at<double>(1), SCOChat.at<double>(2));
 	
 	// Get TCO from quaternion in odomMsg
 	QCOhat.push_back(odomMsg->pose.pose.orientation.x); 
@@ -234,28 +234,31 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	
 	
-	// Transform SOCO from O frame to L frame
-	SOCLhat = TCLhat.t()*SOCChat;
+	// Transform SCOC from C frame to L frame
+	SCOLhat = TCLhat.t()*SCOChat;
 	
 	// Obtain SOLLhat
 	// Calculate and embed SOLL in output file. This variable will be constant for each submap.
-	SCLL = TBL.t()*SCBB + SBLL;			// SCLL = SCBL + SBL -> truth (SCBB/SBLL known)
-	SOLLhat = SOCLhat + SCLL;		
+	SCLL = TBL.t()*SCBB + SBLL;			// SCLL = SCBL + SBLL -> truth (SCBB/SBLL known)
+	SOLLhat = -SCOLhat + SCLL;			// SCOL is SCOL?
 	
-	
-	// Output SOCL to WS
-	//ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
+	ROS_INFO_STREAM("[teach_node] SCLL: " << SCLL);
+	ROS_INFO_STREAM("[teach_node] SBLL: " << SBLL);
+	ROS_INFO_STREAM("[teach_node] SCOLhat: " << SCOLhat);
+	ROS_INFO_STREAM("[teach_node] SOLLhat: " << SOLLhat);
+	// Output SCOL to WS
+	//ROS_INFO("[teach_node] SCOL: [%f,%f,%f]", SCOLhat.at<double>(0), SCOLhat.at<double>(1), SCOLhat.at<double>(2));
 	
 	// Push poses back into vectors
 	// TODO: Only save poses when a certain distance has been travelled or angular change has been observed.
-	// For now only save SOCL and TCL (camera pose wrt. local level frame).
-	//cout << "SOCLhat: " << SOCLhat << endl;
-	vecSOCL.push_back(SOCLhat.clone());
+	// For now only save SCOL and TCL (camera pose wrt. local level frame).
+	//cout << "SCOLhat: " << SCOLhat << endl;
+	vecSCOL.push_back(SCOLhat.clone());
 	vecTCL.push_back(TCLhat.clone());
 	
-	// TODO: why is vecSOCL getting the same SOCLhat value pushed to all of it?
-	// debug - output vecSOCL to screen
-		//cout << "vecSOCL[" << vecSOCL.size()-1 << "]: " << vecSOCL[vecSOCL.size()-1] << endl;
+	// TODO: why is vecSCOL getting the same SCOLhat value pushed to all of it?
+	// debug - output vecSCOL to screen
+		//cout << "vecSCOL[" << vecSCOL.size()-1 << "]: " << vecSCOL[vecSCOL.size()-1] << endl;
 }
 
 
@@ -352,7 +355,7 @@ int main(int argc, char **argv){
 	//tf::TransformListener TCBlistener;
 	
 	// Local variables
-	Mat oldSOCL = Mat::zeros(3,1,CV_64F);
+	Mat oldSCOL = Mat::zeros(3,1,CV_64F);
 	
 	
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
@@ -373,8 +376,8 @@ int main(int argc, char **argv){
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	
-	// Obtain initial SOCL from VO (will be 0) -> oldSOCL
-	oldSOCL = SOCLhat;
+	// Obtain initial SCOL from VO (will be 0) -> oldSCOL
+	oldSCOL = SCOLhat;
 	
 	// Notify user of initialisation
 	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
@@ -386,7 +389,7 @@ int main(int argc, char **argv){
 		// BG. Rtabmap point cloud building in background (rosspawn? Need VO) //
 		
 		// BG. Obtain TCL from VO(RTABMAP publishes VO to /odom topic) //
-		// BG. Obtain SOCL from VO	//
+		// BG. Obtain SCOL from VO	//
 		
 		
 		
@@ -442,22 +445,22 @@ int main(int argc, char **argv){
 		
 		// Check to see if we need a new map
 		// TODO: Check if this condition works
-		if (!saveMap && (fabs(norm(SOCLhat)) > 2.0)){		// |SOCL| > 2 m and map isn't currently being saved			// Save current point cloud map from cloud_map topic to pcd file
+		if (!saveMap && (fabs(norm(SCOLhat)) > 2.0)){		// |SCOL| > 2 m and map isn't currently being saved			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
-			ROS_INFO_STREAM("[teach_node] (fabs(norm(SOCLhat)): " << (fabs(norm(SOCLhat))));
+			ROS_INFO_STREAM("[teach_node] (fabs(norm(SCOLhat)): " << (fabs(norm(SCOLhat))));
 			saveMap = true;
 			// TODO: Save map before resetting (reset on next iteration)
 		}// Map will be reset on next call to cloudCallBack
 		if (resetVars){
-			// Reset vecSOCL and vecTCL
+			// Reset vecSCOL and vecTCL
 			ROS_INFO("[teach_node] Resetting variables.");
-			vecSOCL.clear();
+			vecSCOL.clear();
 			vecTCL.clear();
-			// Reset SOCL and TCL;
-			SOCLhat.release();
+			// Reset SCOL and TCL;
+			SCOLhat.release();
 			TCLhat.release();
-			// Reset SOCChat and TOChat
+			// Reset SCOChat and TOChat
 			// Reset odometry
 			if (!resetOdometryClient.call(emptySrv)){
 				ROS_INFO("[teach_node] Failed to reset odometry.");

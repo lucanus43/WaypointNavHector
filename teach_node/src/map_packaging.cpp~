@@ -40,6 +40,7 @@ void packageMap(vector<Mat> vecSOCL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 	// Open the output file
 	outputFile.open(poseFileName.c_str());
 	
+	outputFile << "SOLL: " << SOLL.at<double>(0) << " " << SOLL.at<double>(1) << " " << SOLL.at<double>(2) << endl;
 	// Loop
 	// for each pose (SOCL/TCL) stored in vecSOCL/vecTCL: 
 	for (int i = 0; i < vecSOCL.size(); i++){
