@@ -81,6 +81,9 @@ using namespace cv;
 	Mat TCLhat;
 	Mat QBL = Mat::zeros(4,1,CV_64F);
 	Mat QCB;
+	Mat SCBB = Mat::zeros(3,1,CV_64F);
+	Mat SCLL;
+	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
 // ------------------------- CODE ------------------------------ //
 
 
@@ -123,7 +126,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	posefileName.str(std::string());	// Clear stringstream
     	posefileName << "pose_" << fileCounter << ".txt";
 		cout << "vecSOCL.size(): " << vecSOCL.size() << endl;
-		packageMap(vecSOCL, vecTCL, posefileName.str());
+		packageMap(vecSOCL, vecTCL, SOLLhat, posefileName.str());
     	
     	// Set saveMap to false
     	saveMap = false;
@@ -160,16 +163,17 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	// Initialisation - perform on first callback
 	if (firstOdom){
-		
-		//ROS_INFO("Made it here. Quitting.");
-		//quitTeachNode = true;
-		
 		// Obtain TCB (static transform, QCB = [0.000, 0.707, 0.000, 0.707])
 		// TODO: Work out why camera_link to base_link is shown in rqt_tf_tree but lookupTransform() fails?
 		QCB = Mat::zeros(4,1,CV_64F);
 		QCB.at<double>(1) = 0.707; QCB.at<double>(3) = 0.707;
 		TCB = quat2dcm(QCB);
 		
+		// Set SCBB
+		SCBB.at<double>(0) = 0.1;
+		SCBB.at<double>(2) = -0.03;
+		
+		// Set firstOdom to false
 		firstOdom = false;
 	}
 	
@@ -208,16 +212,19 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	TOLhat = TOBhat*TBL;			// This should be constant since O does not move wrt L
 	TCLhat = TOChat.t()*TOLhat;		// TCL = TCO*TOB // TCL = TCO*TOL -> From VO
 	
-	//cout << "TCLhat: " << TCLhat << endl;
-	//cout << "TCL: " << TCL << endl;
 	TCL = TCB*TBL; 					// Truth
 	
+	
+	// DEBUG OUTPUTS //
+	//cout << "TCLhat: " << TCLhat << endl;
+	//cout << "TCL: " << TCL << endl;
 	//cout << "TOChat: " << TOChat << endl;
 	//cout << "TCB: " << TCB << endl;
 	//cout << "TOChat*TCB: " << TOChat*TCB << endl;
 	//cout << "TOBhat: " << TOBhat << endl;
 	//cout << "TOLhat: " << TOLhat << endl;
 	//cout << "TBL: " << TBL << endl;
+	// DEBUG OUTPUTS //
 
 	
 	// TODO: Convert QCM to a tf::quaternion and set TCL as a tf::matrix3x3
@@ -225,8 +232,16 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	// TODO: Get SOLL for map.
 	
+	
+	
 	// Transform SOCO from O frame to L frame
 	SOCLhat = TCLhat.t()*SOCChat;
+	
+	// Obtain SOLLhat
+	// Calculate and embed SOLL in output file. This variable will be constant for each submap.
+	SCLL = TBL.t()*SCBB + SBLL;			// SCLL = SCBL + SBL -> truth (SCBB/SBLL known)
+	SOLLhat = SOCLhat + SCLL;		
+	
 	
 	// Output SOCL to WS
 	//ROS_INFO("[teach_node] SOCL: [%f,%f,%f]", SOCLhat.at<double>(0), SOCLhat.at<double>(1), SOCLhat.at<double>(2));
@@ -463,7 +478,7 @@ int main(int argc, char **argv){
 		ros::spinOnce();
 		rate.sleep();
 	}// end loop
-}
+} // end main
 
 
 
