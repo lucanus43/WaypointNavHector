@@ -193,9 +193,7 @@ int main(int argc, char **argv) {
 	// Set target pose
 	landGoal.landing_zone = HBII0;
 	// Send land goal
-	
-	// DEBUG: Do not send goal
-	//lnc.sendGoal(landGoal);
+	lnc.sendGoal(landGoal);
 
 	ros::shutdown();
 

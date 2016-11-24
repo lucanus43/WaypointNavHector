@@ -124,10 +124,6 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	posefileName << "pose_" << fileCounter << ".txt";
 		cout << "vecSOCL.size(): " << vecSOCL.size() << endl;
 		packageMap(vecSOCL, vecTCL, posefileName.str());
-		
-		// Reset vecSOCL and vecTCL
-		vecSOCL.clear();
-		vecTCL.clear();
     	
     	// Set saveMap to false
     	saveMap = false;
@@ -184,7 +180,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SOCChat.at<double>(2) = (odomMsg->pose.pose.position.z);
 	
 	// Notify user that CB functon has been entered
-	//ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
+	ROS_INFO("[teach_node] SOCC: [%f,%f,%f]", SOCChat.at<double>(0), SOCChat.at<double>(1), SOCChat.at<double>(2));
 	
 	// Get TCO from quaternion in odomMsg
 	QCOhat.push_back(odomMsg->pose.pose.orientation.x); 
@@ -265,7 +261,7 @@ void landingCallBack(const hector_uav_msgs::LandingActionGoalConstPtr& landingPo
 	// Destroy view
 	ROS_INFO("[teach_node] Waypoints complete. Shutting down.");
 	// Exit
-	//ros::shutdown();
+	ros::shutdown();
 }
 
 
@@ -358,7 +354,7 @@ int main(int argc, char **argv){
 	// Command Pose subscriber
 	cmdPoseSub = nh.subscribe("/command/pose", 1000, cmdPoseCallBack);
 	// Subscribe to odom topic
-	odomSub = nh.subscribe("/rtabmap/odom", 1000, odomCallBack);
+	odomSub = nh.subscribe("/rtabmap/odom", 1, odomCallBack);
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	
@@ -368,7 +364,7 @@ int main(int argc, char **argv){
 	// Notify user of initialisation
 	ROS_INFO("[teach_node] teach_node initialised. Entering loop.");
 	
-	//ros::Rate rate(10.0);
+	ros::Rate rate(10.0);
 	// Loop (till waypoints are complete/landing initiated)
 	while(nh.ok()){
 		// BG. Perform Waypoint navigation. (Build a launch file that launches waypointnav) //
@@ -377,10 +373,11 @@ int main(int argc, char **argv){
 		// BG. Obtain TCL from VO(RTABMAP publishes VO to /odom topic) //
 		// BG. Obtain SOCL from VO	//
 		
-		// TODO: Waypoint navigation in teach node.
+		
 		
 		// TODO: Check if VO is lost and reset VO?
 		
+		// TODO: Waypoint navigation in teach node.
 		// TODO: For now, reset odometry when the first waypoint is reached (takeoff)
 		if (firstTakeOff && fabs(norm(SBLL_cmd)) > 0.0) {
 			if( fabs( SBLL.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBL.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
@@ -396,6 +393,8 @@ int main(int argc, char **argv){
 							firstTakeOff = false;
 						}
 						// firstTakeOff set to false when takeoffcallback is called.
+						// Reset variables
+						resetVars = true;
 					}
 				}
 			}
@@ -428,31 +427,41 @@ int main(int argc, char **argv){
 		
 		// Check to see if we need a new map
 		// TODO: Check if this condition works
-		if (!saveMap && (fabs(norm(SOCLhat)) > 2.0)){		// |SOCL| > 2 m and map isn't being saved?
-			// Save current point cloud map from cloud_map topic to pcd file
+		if (!saveMap && (fabs(norm(SOCLhat)) > 2.0)){		// |SOCL| > 2 m and map isn't currently being saved			// Save current point cloud map from cloud_map topic to pcd file
 			// if listening to cloud_map topic, set a flag for cb function to save.
 			ROS_INFO("[teach_node] Saving map to file.");
+			ROS_INFO_STREAM("[teach_node] (fabs(norm(SOCLhat)): " << (fabs(norm(SOCLhat))));
 			saveMap = true;
 			// TODO: Save map before resetting (reset on next iteration)
-			// Map will be reset on next call to cloudCallBack
-			if (resetVars){
-				// Reset odometry
-				if (!resetOdometryClient.call(emptySrv)){
-					ROS_INFO("[teach_node] Failed to reset odometry.");
-				} else {
-					ROS_INFO("[teach_node] Succeeded in resetting dometry.");
-				}
-				// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
-				if (!resetMapClient.call(emptySrv)){
-					ROS_INFO("[teach_node] Failed to reset map.");
-				} else {
-					ROS_INFO("[teach_node] Succeeded in resetting map.");
-				}
-				resetVars = false;
-			}// endif
+		}// Map will be reset on next call to cloudCallBack
+		if (resetVars){
+			// Reset vecSOCL and vecTCL
+			ROS_INFO("[teach_node] Resetting variables.");
+			vecSOCL.clear();
+			vecTCL.clear();
+			// Reset SOCL and TCL;
+			SOCLhat.release();
+			TCLhat.release();
+			// Reset SOCChat and TOChat
+			// Reset odometry
+			if (!resetOdometryClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset odometry.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting dometry.");
+			}
+			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+			if (!resetMapClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset map.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting map.");
+			}
+			resetVars = false;
+			saveMap = false;
+			// Sleep 0.5 seconds since it takes this long for the odometry to reset.
+			ros::Duration(0.5).sleep();
 		}// endif
 		ros::spinOnce();
-		//rate.sleep();
+		rate.sleep();
 	}// end loop
 }
 
