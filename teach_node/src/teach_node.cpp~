@@ -234,7 +234,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	
 	
-	// Transform SCOC from C frame to L frame
+	// Transform SCOC from C coordinates to L coords
 	SCOLhat = TCLhat.t()*SCOChat;
 	
 	// Obtain SOLLhat
