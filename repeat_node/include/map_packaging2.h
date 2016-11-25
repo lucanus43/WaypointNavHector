@@ -25,7 +25,7 @@ Date: 161114
 #include <opencv2/highgui/highgui.hpp>
 #include <cv_bridge/cv_bridge.h>
 
-#include "cvUtility.h"
+#include "cvUtility2.h"
 
 using namespace std;
 using namespace cv;

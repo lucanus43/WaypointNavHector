@@ -18,6 +18,7 @@ Date: 161125
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fstream>
 // ROS Includes
 #include <ros/ros.h>
 #include <nav_msgs/Odometry.h>
@@ -42,14 +43,30 @@ Date: 161125
 #include <tf/transform_datatypes.h>
 #include "tf/LinearMath/Transform.h"	// To convert between geometry_msgs and TF libraries
 // JDev Files
-#include "cvUtility.h"
-#include "map_packaging.h"
+#include "cvUtility2.h"
+#include "map_packaging2.h"
 
 
 using namespace cv;
 
 // ---------------------- GLOBAL VARIABLES -----------------------------//
+// Main variables
+	Mat SCLL_cmd;
+	Mat TCL_cmd;
+	Mat QCL_cmd;
+	double wp_radius = 0.01;
 
+// Odometry Variables
+	Mat TRLhat;
+	Mat TCRhat;
+	Mat SRLLhat;
+	Mat TCLhat;			// Needs initialising
+	Mat SCLLhat;		// Needs initialising
+	Mat TRL;
+	Mat TCL;
+	Mat SRLL;
+	Mat SCLL;
+	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
 
 
 
@@ -116,11 +133,11 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	// Compute SRLLhat and TRLhat - needs to only be done once per submap - 
 	// TODO: Initialise TCLhat and SCLLhat - GPS/Maggrav update to get SCLL/TCL initially?
-	TRLhat = TRChat*TCLhat;		
+	TRLhat = TCRhat.t()*TCLhat;		
 	SRLLhat = -TRLhat*SCRChat + SCLLhat; 	
 	
 	// 'Truth' SRLL and TRL
-	TRL = TRChat*TCL;						// Need TCL
+	TRL = TCRhat.t()*TCL;						// Need TCL
 	SRLL = -TRL*SCRChat + SCLL;				// Need SCLL
 	
 	// Update TCLhat and SCLLhat
@@ -133,6 +150,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 /*
 positionCallBack- 	Called when SBLL/TBL is received (listening for TBL - truth)
 					Waypoint navigation is performed here.
+					
+					TODO: Listen for SCLLhat instead -> publish SCLLhat to TF
 
 Author: JDev 161125
 	
@@ -140,9 +159,11 @@ Author: JDev 161125
 // -------------------------------------------------------------
 void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
 	// Local variables
-	// ..
+	Mat QCLhat;
 	
 	// Force SCLLhat to converge to SCLL_cmd and TCLhat to converge to TCL_cmd
+	QCLhat = dcm2quat(TCLhat);
+	
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
 			if( fabs( SCLLhat.at<double>(2) - SCLL_cmd.at<double>(2) )  < wp_radius && fabs( QCLhat.at<double>(2) -  QCL_cmd.at<double>(2) ) < wp_radius) {
@@ -163,13 +184,25 @@ Author: JDev 161125
 // -------------------------------------------------------------
 void generateWaypoints(string poseFileName){
 	// Local variables
-	// ..
-	
+	fstream poseFile;
+	vector<Mat> vecSCOL;
+	vector<Mat> vecTCL;
 
+	
 	// Read in waypoints from poseFile along with SOLLhat
-	// Generate waypoints as SCLL_cmd using SCOLhat and SOLLhat
+	poseFile.open(poseFileName.c_str());
+	if(poseFile.fail()){
+		ROS_ERROR_STREAM("Error: File stream " << poseFileName << " failed to open (check spelling)");
+		ros::shutdown(); 
+	}
+	
+	// Generate waypoints as SCLL_cmd and QCL_cmd using SCOLhat and SOLLhat and QCL from pose file
 		// SCLL_cmd = SCOLhat + SOLLhat
+		// QCL_cmd = posefile.QCL
+	extractPosesFromFile(poseFile, SOLLhat, vecSCOL, vecTCL);
+		
 	// Subsample pose file
+	// ..
 }
 
 // -------------------------------------------------------------
@@ -219,6 +252,8 @@ int main(int argc, char **argv){
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	
 	// Start on submap_0 -> pose_0.txt, submap_0.pcd.
+	// TODO: Make the map selection based on SCLLhat and SOLL and direction of travel (alternatively,
+	// scan all maps and load all SOLL values and compare SCLLhat)
 	generateWaypoints("pose_0.txt");
 	loadSubmapPCD("submap_0.pcd");
 	
@@ -231,6 +266,9 @@ int main(int argc, char **argv){
 			// if next submap exists, move to next submap.
 			// else exit.
 		// endif
+		
+		// Perform spin
+		ros::spinOnce();
 	}
 	
 }

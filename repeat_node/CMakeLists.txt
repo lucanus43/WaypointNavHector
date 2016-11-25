@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(teach_node)
+project(repeat_node)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -13,6 +13,7 @@ find_package(catkin REQUIRED COMPONENTS
   rospy
   std_msgs
   pcl_ros
+  teach_node
   #pcl
 )
 
@@ -109,9 +110,9 @@ find_package( OpenCV REQUIRED )
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros #pcl
+ #LIBRARIES cvUtility map_packaging
+  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros teach_node #pcl
   DEPENDS system_lib OpenCV
-  LIBRARIES cvUtility map_packaging
 )
 
 ###########
@@ -125,6 +126,7 @@ include_directories(
 	include
   ${catkin_INCLUDE_DIRS}
   ${OpenCV_INCLUDE_DIRS}
+  ${teach_node_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -132,8 +134,8 @@ include_directories(
 #   src/${PROJECT_NAME}/image_transport_node.cpp
 # )
 
-add_library(cvUtility src/cvUtility.cpp)
-add_library(map_packaging src/map_packaging.cpp src/cvUtility.cpp)
+#add_library(cvUtility teach_node/src/cvUtility.cpp)
+#add_library(map_packaging teach_node/src/map_packaging.cpp teach_node/src/cvUtility.cpp)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -141,20 +143,18 @@ add_library(map_packaging src/map_packaging.cpp src/cvUtility.cpp)
 # add_dependencies(image_transport_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
- add_executable(teach_node src/teach_node.cpp)
-
-## Add cmake target dependencies of the executable
-## same as for the library above
- add_dependencies(teach_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+ add_executable(repeat_node src/repeat_node.cpp)
 
 
 ## Specify libraries to link a library or executable target against
- target_link_libraries(teach_node
+ target_link_libraries(repeat_node
    ${catkin_LIBRARIES}
    ${OpenCV_LIBRARIES}
-   cvUtility
-   map_packaging
+   #cvUtility
+   #map_packaging
  )
+
+
 
 
 #############
@@ -179,11 +179,11 @@ add_library(map_packaging src/map_packaging.cpp src/cvUtility.cpp)
 # )
 
 ## Mark cpp header files for installation
- install(DIRECTORY include/${PROJECT_NAME}/
-   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
-   FILES_MATCHING PATTERN "*.h"
-   PATTERN ".svn" EXCLUDE
- )
+# install(DIRECTORY include/${PROJECT_NAME}/
+#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+#   FILES_MATCHING PATTERN "*.h"
+#   PATTERN ".svn" EXCLUDE
+# )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
 # install(FILES

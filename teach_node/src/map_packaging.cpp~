@@ -24,16 +24,16 @@ packageMap - Packages a map (saves displacements and transforms to a text file)
 				O: Odometry frame
 				L: Local level frame
 				
-				// TODO: FIX THIS CODE UP. Output is NOT SCAA - output is SOCL
+				// TODO: FIX THIS CODE UP. Output is NOT SCAA - output is SCOL
 
 Author: JDev 161108
 	
 */
 // -------------------------------------------------------------
-void packageMap(vector<Mat> vecSOCL, vector<Mat> vecTCL, Mat SOLL, string poseFileName){	
+void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFileName){	
 	// Local variables	
 	Mat TCL = Mat::eye(3,3,CV_64F); // Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
-	Mat SOCL = Mat::zeros(3,1,CV_64F);
+	Mat SCOL = Mat::zeros(3,1,CV_64F);
 	Mat QCL = Mat::zeros(4,1,CV_64F);
 	// Use initial camera pose to define submap frame. Based on features seen in first pose?
 	
@@ -42,17 +42,17 @@ void packageMap(vector<Mat> vecSOCL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 	
 	outputFile << "SOLL: " << SOLL.at<double>(0) << " " << SOLL.at<double>(1) << " " << SOLL.at<double>(2) << endl;
 	// Loop
-	// for each pose (SOCL/TCL) stored in vecSOCL/vecTCL: 
-	for (int i = 0; i < vecSOCL.size(); i++){
+	// for each pose (SCOL/TCL) stored in vecSCOL/vecTCL: 
+	for (int i = 0; i < vecSCOL.size(); i++){
 		// Obtain SCAA and TCA from stored vectors
-		SOCL = vecSOCL[i];
+		SCOL = vecSCOL[i];
 		//cout << "SCAA: " << SCAA << endl;
 		//cout << "vecSCAA[" << i << "]: " << vecSCAA[i] << endl;
 		TCL = vecTCL[i];
-		// Write SOCL and TCL to file
+		// Write SCOL and TCL to file
 		// Note: QCL in format qw,qx,qy,qz
 		QCL = dcm2quat(TCL);
-		outputFile << SOCL.at<double>(0) << " " << SOCL.at<double>(1) << " " << SOCL.at<double>(2) << " " << QCL.at<double>(0) << " " << QCL.at<double>(1) << " " << QCL.at<double>(2) << " " << QCL.at<double>(3) << endl;
+		outputFile << SCOL.at<double>(0) << " " << SCOL.at<double>(1) << " " << SCOL.at<double>(2) << " " << QCL.at<double>(0) << " " << QCL.at<double>(1) << " " << QCL.at<double>(2) << " " << QCL.at<double>(3) << endl;
 
 	} // end Loop
 	
@@ -63,18 +63,24 @@ void packageMap(vector<Mat> vecSOCL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 
 
 
-bool extractPosesFromFile(fstream poseFile){
+bool extractPosesFromFile(fstream poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL){
 	// Local variables
 	string tempString;
 	size_t pos = 0;
 	string token;
 	int counter = 0;
 	string delimiter = " ";
-	Mat SCAA = Mat::zeros(3,1,CV_64F);
-	Mat QCA = Mat::zeros(4,1,CV_64F);
+	string discard;
+	Mat SCOL = Mat::zeros(3,1,CV_64F);
+	Mat QCL = Mat::zeros(4,1,CV_64F);
 		
 	// Code
-	// Get line from posefile. Format: SSV - T P1 P2 P3 QX QY QZ QW
+	// Get first line (format: SOLL: P1 P2 P3)
+	poseFile >> discard >> SOLL.at<double>(0) >> SOLL.at<double>(1) >> SOLL.at<double>(2);
+	
+	cout << "SOLL: " << SOLL << endl;
+	
+	// Get line from posefile. Format: SSV - P1 P2 P3 QX QY QZ QW
 	if (!poseFile.eof()) {
 		getline(poseFile, tempString, '\n');
 		//cout << tempString << endl;
@@ -82,24 +88,24 @@ bool extractPosesFromFile(fstream poseFile){
 			token = tempString.substr(0, pos);
 			//cout << token << endl;
 			tempString.erase(0, pos + delimiter.length());
-			if (counter > 0 && counter <= 3) {
+			if (counter < 3) {
 				// Accelerometer values in string
 				double postemp = atof(token.c_str());
-				SCAA.at<double>(counter, 0) = postemp;
+				SCOL.at<double>(counter, 0) = postemp;
 			}
-			else if ((counter > 3) && (counter < 6)) {
+			else if ((counter > 2) && (counter < 6)) {
 				// Gyro values in string
 				double quatTemp = atof(token.c_str());
-				QCA.at<double>(counter - 3, 0) = quatTemp;
+				QCL.at<double>(counter - 3, 0) = quatTemp;
 			}
 			counter++;
 		}
 		// Assign final element in string
-		QCA.at<double>(counter - 5, 0) = atof(tempString.c_str());
+		QCL.at<double>(counter - 3, 0) = atof(tempString.c_str());
 		
 		// Push back vectors
-		vecSCAA.push_back(SCAA);
-		vecQCA.push_back(QCA);
+		vecSCOL.push_back(SCOL);
+		vecTCL.push_back(quat2dcm(QCL));
 		return true;
 	} else { return false; }
 }

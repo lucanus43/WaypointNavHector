@@ -32,17 +32,17 @@ using namespace cv;
 
 // ------------------------- DECLARATIONS ------------------------------ //
 // Variables
-fstream poseFile;
+//fstream poseFile;
 ofstream outputFile;
-vector<Mat> vecSCAA;
-vector<Mat> vecQCA;
+//vector<Mat> vecSCAA;
+//vector<Mat> vecQCA;
 Mat QCS = Mat::zeros(4,1,CV_64F);
 Mat SCSS = Mat::zeros(3,1,CV_64F);
 
 // Functions
-void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, string poseFileName);
+void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, Mat SOLL, string poseFileName);
 void packageMap(string poseFileLocation, Mat TCM);
-bool extractPosesFromFile(fstream poseFile);
+bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL);
 
 
 #endif
