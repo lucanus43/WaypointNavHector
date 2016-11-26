@@ -33,7 +33,7 @@ Mat dcm2angle(Mat DCM) {
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 // Converts a DCM to quaternion
-// Output quaternion as [w,x,y,z] format
+// Output quaternion as [x,y,z,w] format
 //
 // Jeffrey Devaraj 12/07/16
 //////////////////////////////////////////////////////////////////////////////////////////////
@@ -43,8 +43,13 @@ Mat dcm2quat(Mat DCM) {
 	Mat Eul = Mat::zeros(3, 1, CV_64F);
 
 	// Convert DCM to eul and output as quaternion
-	Eul = dcm2angle(DCM);
-	Q = eul2quat(Eul);
+	//Eul = dcm2angle(DCM);
+	//Q = eul2quat(Eul);
+	
+	Q.at<double>(3) = 0.5*sqrt(trace(DCM).val[0]+1);
+	Q.at<double>(0) = (DCM.at<double>(1,2) - DCM.at<double>(2,1))/(4*Q.at<double>(3));
+	Q.at<double>(1) = (DCM.at<double>(2,0) - DCM.at<double>(0,2))/(4*Q.at<double>(3));
+	Q.at<double>(2) = (DCM.at<double>(0,1) - DCM.at<double>(1,0))/(4*Q.at<double>(3));
 
 	return Q;
 }

@@ -395,8 +395,8 @@ int main(int argc, char **argv){
 		
 		// TODO: Check if VO is lost and reset VO?
 		
-		// TODO: Waypoint navigation in teach node.
-		// TODO: For now, reset odometry when the first waypoint is reached (takeoff)
+		// For now, reset odometry when the first waypoint is reached (takeoff)
+		// TODO: Error in third if statement. Fix this.
 		if (firstTakeOff && fabs(norm(SBLL_cmd)) > 0.0) {
 			if( fabs( SBLL.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBL.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
 				if( fabs( SBLL.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBL.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {

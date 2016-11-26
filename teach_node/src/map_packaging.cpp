@@ -86,7 +86,7 @@ bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, ve
 		>> QCL.at<double>(1) >> QCL.at<double>(2) >> QCL.at<double>(3);
 		// Push back vectors
 		vecSCOL.push_back(SCOL.clone());
-		vecQCL.push_back(quat2dcm(QCL).clone());	
+		vecQCL.push_back(QCL.clone());	
 	}
 	return true;
 }

@@ -63,7 +63,7 @@ void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 
 
 
-bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL){
+bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecQCL){
 	// Local variables
 	string tempString;
 	size_t pos = 0;
