@@ -29,6 +29,7 @@ Date: 161125
 #include <cv_bridge/cv_bridge.h>
 #include <std_srvs/Empty.h>
 // Hector includes
+#include "hector_uav_msgs/TakeoffAction.h"
 #include "hector_uav_msgs/LandingAction.h"
 // PCL includes
 #include <pcl_conversions/pcl_conversions.h>
@@ -43,8 +44,8 @@ Date: 161125
 #include <tf/transform_datatypes.h>
 #include "tf/LinearMath/Transform.h"	// To convert between geometry_msgs and TF libraries
 // JDev Files
-#include "cvUtility2.h"
-#include "map_packaging2.h"
+#include "cvUtility.h"
+#include "map_packaging.h"
 
 
 using namespace cv;
@@ -55,20 +56,32 @@ using namespace cv;
 	Mat TCL_cmd;
 	Mat QCL_cmd;
 	double wp_radius = 0.01;
+	vector<geometry_msgs::Pose> waypointsCL;
+	int wp_counter = 0;
+	bool next_map = false;
 
 // Odometry Variables
-	Mat TRLhat;
-	Mat TCRhat;
-	Mat SRLLhat;
-	Mat TCLhat;			// Needs initialising
-	Mat SCLLhat;		// Needs initialising
-	Mat TRL;
-	Mat TCL;
-	Mat SRLL;
-	Mat SCLL;
+	Mat TRLhat = Mat::zeros(3,3,CV_64F);
+	Mat TCRhat = Mat::zeros(3,3,CV_64F);
+	Mat SRLLhat = Mat::zeros(3,1,CV_64F);
+	Mat TCLhat= Mat::zeros(3,3,CV_64F);			// Needs initialising
+	Mat SCLLhat = Mat::zeros(3,1,CV_64F);		// Needs initialising
+	Mat TRL = Mat::zeros(3,3,CV_64F);
+	Mat TCL = Mat::zeros(3,3,CV_64F);
+	Mat SRLL = Mat::zeros(3,1,CV_64F);
+	Mat SCLL = Mat::zeros(3,1,CV_64F);
+	
+// Teach node variables
+	Mat TOLhat = Mat::zeros(3,3,CV_64F);
 	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
 
+// Point cloud registration variables
+	Mat TROhat = Mat::zeros(3,3,CV_64F);
+	Mat SROLhat = Mat::zeros(3,1,CV_64F);
 
+
+// Takeoff client (SimpleActionClient from actionlib)
+typedef actionlib::SimpleActionClient<hector_uav_msgs::TakeoffAction> TakeoffClient;
 
 
 // -------------------------------------------------------------
@@ -85,6 +98,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	pcl::PCLPointCloud2 pcl_pc2;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	
+	// TODO: Do this only once per submap (SRO and TRO should be constant for each cloud).
 	// Process
 	pcl_conversions::toPCL(*input,pcl_pc2);
     pcl::fromPCLPointCloud2(pcl_pc2,*temp_cloud);
@@ -95,6 +109,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     // SRO = error displacement, TRO = error transform
     // TODO: Work out what coordinates SRO is in.
     
+    //
     
 }
 
@@ -131,10 +146,16 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Convert QCR to TCR
 	TCRhat = quat2dcm(QCRhat);
 	
-	// Compute SRLLhat and TRLhat - needs to only be done once per submap - 
-	// TODO: Initialise TCLhat and SCLLhat - GPS/Maggrav update to get SCLL/TCL initially?
-	TRLhat = TCRhat.t()*TCLhat;		
-	SRLLhat = -TRLhat*SCRChat + SCLLhat; 	
+	// Compute SRLLhat and TRLhat - needs to only be done once per submap - constant.
+	
+	// VO alone approach. This will need TCLhat and SCLLhat to be initialised somehow.
+	// e.g. TCLhat = TCB*TBLhat with TBLhat from IMU/magnetometer, SCLLhat = SCBL + SBLLhat with SBLLhat from GPS.
+	// TRLhat = TCRhat.t()*TCLhat;	
+	// SRLLhat = -TRLhat*SCRChat + SCLLhat;
+	
+	// VO + ICP approach:
+	TRLhat = TROhat*TOLhat;			// TODO: Get TOLhat embedded into posefiles, get TROhat from ICP
+	SRLLhat = SROLhat + SOLLhat; 	// TODO: Get SROL from ICP (SOLLhat from posefile)
 	
 	// 'Truth' SRLL and TRL
 	TRL = TCRhat.t()*TCL;						// Need TCL
@@ -143,6 +164,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Update TCLhat and SCLLhat
 	TCLhat = TCRhat*TRLhat;
 	SCLLhat = TCLhat.t()*SCRChat + SRLLhat;
+	
+	//ROS_INFO("Finished odomCallBack");
 }
 
 
@@ -160,6 +183,7 @@ Author: JDev 161125
 void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
 	// Local variables
 	Mat QCLhat;
+	geometry_msgs::Pose gmCL;
 	
 	// Force SCLLhat to converge to SCLL_cmd and TCLhat to converge to TCL_cmd
 	QCLhat = dcm2quat(TCLhat);
@@ -167,8 +191,22 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
 			if( fabs( SCLLhat.at<double>(2) - SCLL_cmd.at<double>(2) )  < wp_radius && fabs( QCLhat.at<double>(2) -  QCL_cmd.at<double>(2) ) < wp_radius) {
-				// ..
-				
+				//If there are more waypoints
+				wp_counter++;	//Move to the next waypoint
+				if( wp_counter < waypointsCL.size() ) {
+					SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
+					SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
+					SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
+					QCL_cmd.at<double>(0) = waypointsCL.at(wp_counter).orientation.x;
+					QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
+					QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
+					QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+					// TODO: Export commanded pose as gmBL_cmd
+					
+				} else {
+					next_map = true;
+					ROS_INFO( "Finished the waypoint path!" );
+				}	
 			}
 		}
 	}
@@ -177,6 +215,13 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
 // -------------------------------------------------------------
 /*
 generateWaypoints -	Generates waypoints from the given poses.txt file
+					Called every time a submap is loaded.
+					
+					NOTE: Uses globals SCLL_cmd and QCL_cmd. This should not affect
+					the variable used in the rest of the script since this is only
+					called at the beginning and the values will be changed in the first
+					positionCallBack.
+					TODO: Check if this is true.
 
 Author: JDev 161125
 	
@@ -186,7 +231,8 @@ void generateWaypoints(string poseFileName){
 	// Local variables
 	fstream poseFile;
 	vector<Mat> vecSCOL;
-	vector<Mat> vecTCL;
+	vector<Mat> vecQCL;
+	geometry_msgs::Pose temp_wp;
 
 	
 	// Read in waypoints from poseFile along with SOLLhat
@@ -199,10 +245,27 @@ void generateWaypoints(string poseFileName){
 	// Generate waypoints as SCLL_cmd and QCL_cmd using SCOLhat and SOLLhat and QCL from pose file
 		// SCLL_cmd = SCOLhat + SOLLhat
 		// QCL_cmd = posefile.QCL
-	extractPosesFromFile(poseFile, SOLLhat, vecSCOL, vecTCL);
-		
+	extractPosesFromFile(poseFile, SOLLhat, vecSCOL, vecQCL);
+	
 	// Subsample pose file
-	// ..
+	// .. TODO
+	
+	// Create waypoints
+	for (int i = 0; i < vecSCOL.size(); i++){
+		// Commanded displacement vector rel. Local Level frame
+		SCLL_cmd = vecSCOL[i] + SOLLhat;
+		QCL_cmd = vecQCL[i];
+		// Geometry message
+		temp_wp.position.x = SCLL_cmd.at<double>(0);
+		temp_wp.position.y = SCLL_cmd.at<double>(1);
+		temp_wp.position.z = SCLL_cmd.at<double>(2);
+		temp_wp.orientation.x = QCL_cmd.at<double>(0);
+		temp_wp.orientation.y = QCL_cmd.at<double>(1);
+		temp_wp.orientation.z = QCL_cmd.at<double>(2);
+		temp_wp.orientation.w = QCL_cmd.at<double>(3);
+		// Waypoints (pose of C wrt. L)
+		waypointsCL.push_back(temp_wp);
+	}
 }
 
 // -------------------------------------------------------------
@@ -240,7 +303,7 @@ int main(int argc, char **argv){
 
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
-	ros::Subscriber cloudSub;	// Point cloud subscriber
+	//ros::Subscriber cloudSub;	// Point cloud subscriber
 	
 	// Local variables
 	// ..
@@ -249,7 +312,7 @@ int main(int argc, char **argv){
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, odomCallBack);
 	// Subscribe to cloud_map topic
-	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
+	//cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	
 	// Start on submap_0 -> pose_0.txt, submap_0.pcd.
 	// TODO: Make the map selection based on SCLLhat and SOLL and direction of travel (alternatively,
@@ -257,13 +320,22 @@ int main(int argc, char **argv){
 	generateWaypoints("pose_0.txt");
 	loadSubmapPCD("submap_0.pcd");
 	
+	// Set first waypoint goal
+	SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
+	SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
+	SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
+	QCL_cmd.at<double>(0) = waypointsCL.at(wp_counter).orientation.x;
+	QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
+	QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
+	QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+	
 	
 	// Loop
 	while(nh.ok()){
 		// Waypoint navigation using SCLLhat and SCLL_cmd, TCLhat and TCL_cmd (convert to B frame?)
 			
 		// if waypoints complete
-			// if next submap exists, move to next submap.
+			// if next submap exists, move to next submap. (set new waypoints/goal)
 			// else exit.
 		// endif
 		

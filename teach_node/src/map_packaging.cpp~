@@ -63,7 +63,7 @@ void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 
 
 
-bool extractPosesFromFile(fstream poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL){
+bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL){
 	// Local variables
 	string tempString;
 	size_t pos = 0;
@@ -81,33 +81,14 @@ bool extractPosesFromFile(fstream poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vec
 	cout << "SOLL: " << SOLL << endl;
 	
 	// Get line from posefile. Format: SSV - P1 P2 P3 QX QY QZ QW
-	if (!poseFile.eof()) {
-		getline(poseFile, tempString, '\n');
-		//cout << tempString << endl;
-		while ((pos = tempString.find(delimiter)) != string::npos) {
-			token = tempString.substr(0, pos);
-			//cout << token << endl;
-			tempString.erase(0, pos + delimiter.length());
-			if (counter < 3) {
-				// Accelerometer values in string
-				double postemp = atof(token.c_str());
-				SCOL.at<double>(counter, 0) = postemp;
-			}
-			else if ((counter > 2) && (counter < 6)) {
-				// Gyro values in string
-				double quatTemp = atof(token.c_str());
-				QCL.at<double>(counter - 3, 0) = quatTemp;
-			}
-			counter++;
-		}
-		// Assign final element in string
-		QCL.at<double>(counter - 3, 0) = atof(tempString.c_str());
-		
+	while (!poseFile.eof()) {
+		poseFile >> SCOL.at<double>(0) >> SCOL.at<double>(1) >> SCOL.at<double>(2) >> QCL.at<double>(0)
+		>> QCL.at<double>(1) >> QCL.at<double>(2) >> QCL.at<double>(3);
 		// Push back vectors
-		vecSCOL.push_back(SCOL);
-		vecTCL.push_back(quat2dcm(QCL));
-		return true;
-	} else { return false; }
+		vecSCOL.push_back(SCOL.clone());
+		vecQCL.push_back(quat2dcm(QCL).clone());	
+	}
+	return true;
 }
 
 
@@ -246,3 +227,29 @@ void packageMap(string poseFileLocation, Mat TCM){
 */	
 }
 
+
+
+// Unused code
+/*
+	if (!poseFile.eof()) {
+		getline(poseFile, tempString, '\n');
+		//cout << tempString << endl;
+		while ((pos = tempString.find(delimiter)) != string::npos) {
+			token = tempString.substr(0, pos);
+			//cout << token << endl;
+			tempString.erase(0, pos + delimiter.length());
+			if (counter < 3) {
+				// Accelerometer values in string
+				double postemp = atof(token.c_str());
+				SCOL.at<double>(counter, 0) = postemp;
+			}
+			else if ((counter > 2) && (counter < 6)) {
+				// Gyro values in string
+				double quatTemp = atof(token.c_str());
+				QCL.at<double>(counter - 3, 0) = quatTemp;
+			}
+			counter++;
+		}
+		// Assign final element in string
+		QCL.at<double>(counter - 3, 0) = atof(tempString.c_str());
+*/
