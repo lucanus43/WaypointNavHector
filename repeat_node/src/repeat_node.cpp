@@ -31,6 +31,7 @@ Date: 161125
 // Hector includes
 #include "hector_uav_msgs/TakeoffAction.h"
 #include "hector_uav_msgs/LandingAction.h"
+#include "hector_uav_msgs/PoseAction.h"
 // PCL includes
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/io/pcd_io.h>
@@ -53,12 +54,19 @@ using namespace cv;
 // ---------------------- GLOBAL VARIABLES -----------------------------//
 // Main variables
 	Mat SCLL_cmd;
+	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F);
 	Mat TCL_cmd;
+	Mat TBL_cmd = Mat::zeros(3,3,CV_64F);
 	Mat QCL_cmd;
 	double wp_radius = 0.01;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 0;
 	bool next_map = false;
+	Mat QCB = Mat::zeros(4,1,CV_64F);
+	Mat TCB = Mat::zeros(3,3,CV_64F);
+	Mat SCBB = Mat::zeros(3,1,CV_64F);
+	Mat QBL_cmd = Mat::zeros(4,1,CV_64F);
+	geometry_msgs::PoseStamped gmBL_cmd;
 
 // Odometry Variables
 	Mat TRLhat = Mat::zeros(3,3,CV_64F);
@@ -82,7 +90,7 @@ using namespace cv;
 
 // Takeoff client (SimpleActionClient from actionlib)
 typedef actionlib::SimpleActionClient<hector_uav_msgs::TakeoffAction> TakeoffClient;
-
+typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionClient;
 
 // -------------------------------------------------------------
 /*
@@ -165,7 +173,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	TCLhat = TCRhat*TRLhat;
 	SCLLhat = TCLhat.t()*SCRChat + SRLLhat;
 	
-	//ROS_INFO("Finished odomCallBack");
+	ROS_INFO("Finished odomCallBack");
 }
 
 
@@ -180,10 +188,19 @@ Author: JDev 161125
 	
 */
 // -------------------------------------------------------------
-void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
+void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	// Local variables
 	Mat QCLhat;
 	geometry_msgs::Pose gmCL;
+	Mat SBLL = Mat::zeros(3,1,CV_64F);
+	
+	SBLL.at<double>(0) = gmBL->pose.position.x;
+	SBLL.at<double>(1) = gmBL->pose.position.y;
+	SBLL.at<double>(2) = gmBL->pose.position.z;
+	// Output message to user
+	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
+	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
+
 	
 	// Force SCLLhat to converge to SCLL_cmd and TCLhat to converge to TCL_cmd
 	QCLhat = dcm2quat(TCLhat);
@@ -201,7 +218,18 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& SBLLTBL ) {
 					QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
 					QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
 					QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
-					// TODO: Export commanded pose as gmBL_cmd
+					// Convert SCLL_cmd to SBLL_cmd (SBLL = SBCL + SCLL)
+					SBLL_cmd = TCLhat.t()*TCB*SCBB + SCLL_cmd;
+					TBL_cmd = TCB.t()*quat2dcm(QCL_cmd);
+					QBL_cmd = dcm2quat(TBL_cmd);
+					// Export commanded pose as gmBL_cmd
+					gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
+					gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
+					gmBL_cmd.pose.position.z = SBLL_cmd.at<double>(2);
+					gmBL_cmd.pose.orientation.x = QBL_cmd.at<double>(0);
+					gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
+					gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
+					gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
 					
 				} else {
 					next_map = true;
@@ -304,15 +332,21 @@ int main(int argc, char **argv){
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
 	//ros::Subscriber cloudSub;	// Point cloud subscriber
+	ros::Subscriber cmdPoseSub;
+	PoseActionClient PAC(nh, "action/pose");	// Pose action client
+	TakeoffClient TAC(nh, "action/takeoff");	// Takeoff action client
 	
 	// Local variables
-	// ..
+	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
+	hector_uav_msgs::TakeoffGoal takeoffgoal;		// Goal (empty message) for TakeoffClient
 	
 	// Initialisation
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, odomCallBack);
 	// Subscribe to cloud_map topic
 	//cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
+	// Subscribe to positionCallBack
+	cmdPoseSub = nh.subscribe("/command/pose", 1000, positionCallBack);
 	
 	// Start on submap_0 -> pose_0.txt, submap_0.pcd.
 	// TODO: Make the map selection based on SCLLhat and SOLL and direction of travel (alternatively,
@@ -321,6 +355,8 @@ int main(int argc, char **argv){
 	loadSubmapPCD("submap_0.pcd");
 	
 	// Set first waypoint goal
+	// TODO: use geometry_msgs instead of cv::Mat for commanded pose?
+	// TODO: Make a function cv::Mat <- gmBA to save space
 	SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
 	SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
 	SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
@@ -328,12 +364,49 @@ int main(int argc, char **argv){
 	QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
 	QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
 	QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+	// Convert SCLL_cmd to SBLL_cmd (SBLL = SBCL + SCLL)
+	SBLL_cmd = TCLhat.t()*TCB*SCBB + SCLL_cmd;
+	TBL_cmd = TCB.t()*quat2dcm(QCL_cmd);
+	QBL_cmd = dcm2quat(TBL_cmd);
+	ROS_INFO_STREAM("SBLL_cmd: " << SBLL_cmd);
+	// Export commanded pose as gmBL_cmd
+	gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
+	gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
+	gmBL_cmd.pose.position.z = SBLL_cmd.at<double>(2);
+	gmBL_cmd.pose.orientation.x = QBL_cmd.at<double>(0);
+	gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
+	gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
+	gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
 	
+	// Set TCB/SCBB
+	QCB.at<double>(1) = 0.707; QCB.at<double>(3) = 0.707;
+	TCB = quat2dcm(QCB);
+	// Set SCBB
+	SCBB.at<double>(0) = 0.1;
+	SCBB.at<double>(2) = -0.03;
+	
+	// Initialise the PoseActionClient
+	PAC.waitForServer();
+	ROS_INFO("Pose client initialised.");
+	
+	// Initialise the TakeoffClient
+	TAC.waitForServer();
+	ROS_INFO("Takeoff client initialised.");
+	// Send take-off goal to TAC -> taking off.
+	TAC.sendGoal(takeoffgoal);
 	
 	// Loop
+	ros::Rate rate(10.0);
 	while(nh.ok()){
 		// Waypoint navigation using SCLLhat and SCLL_cmd, TCLhat and TCL_cmd (convert to B frame?)
-			
+		//Update our message so the receiving node knows it is recent
+		gmBL_cmd.header.stamp = ros::Time::now();
+		gmBL_cmd.header.seq++;
+		gmBL_cmd.header.frame_id = "world";
+
+		// Send current goal to pose
+		poseGoal.target_pose = gmBL_cmd; 
+		PAC.sendGoal(poseGoal);
 		// if waypoints complete
 			// if next submap exists, move to next submap. (set new waypoints/goal)
 			// else exit.
@@ -341,6 +414,7 @@ int main(int argc, char **argv){
 		
 		// Perform spin
 		ros::spinOnce();
+		rate.sleep();
 	}
 	
 }
