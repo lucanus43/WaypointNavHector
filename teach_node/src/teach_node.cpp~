@@ -126,7 +126,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	posefileName.str(std::string());	// Clear stringstream
     	posefileName << "pose_" << fileCounter << ".txt";
 		cout << "vecSCOL.size(): " << vecSCOL.size() << endl;
-		packageMap(vecSCOL, vecTCL, SOLLhat, posefileName.str());
+		packageMap(vecSCOL, vecTCL, SOLLhat, QOLhat, posefileName.str());
     	
     	// Set saveMap to false
     	saveMap = false;

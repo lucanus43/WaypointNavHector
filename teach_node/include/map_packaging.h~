@@ -40,9 +40,9 @@ Mat QCS = Mat::zeros(4,1,CV_64F);
 Mat SCSS = Mat::zeros(3,1,CV_64F);
 
 // Functions
-void packageMap(vector<Mat> vecSCAA, vector<Mat> vecTCA, Mat SOLL, string poseFileName);
+void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, Mat QOL, string poseFileName);
 void packageMap(string poseFileLocation, Mat TCM);
-bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecTCL);
+bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, Mat &QOL vector<Mat> &vecSCOL, vector<Mat> &vecQCL);
 
 
 #endif

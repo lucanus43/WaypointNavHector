@@ -64,13 +64,14 @@ using namespace cv;
 	double wp_radius = 0.01;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 0;
-	bool next_map = false;
+	bool next_map = true;
 	bool firstTakeOff = true;
 	Mat QCB = Mat::zeros(4,1,CV_64F);
 	Mat TCB = Mat::zeros(3,3,CV_64F);
 	Mat SCBB = Mat::zeros(3,1,CV_64F);
 	Mat QBL_cmd = Mat::zeros(4,1,CV_64F);
 	geometry_msgs::PoseStamped gmBL_cmd;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 
 // Odometry Variables
 	Mat TRLhat = Mat::zeros(3,3,CV_64F);
@@ -86,6 +87,7 @@ using namespace cv;
 // Teach node variables
 	Mat TOLhat = Mat::zeros(3,3,CV_64F);
 	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
+	Mat QOLhat = Mat::zeros(4,1,CV_64F);
 
 // Point cloud registration variables
 	Mat TROhat = Mat::zeros(3,3,CV_64F);
@@ -107,31 +109,53 @@ Author: JDev 161125
 // -------------------------------------------------------------
 void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
 	// Local Variables
+	Mat SROOhat = Mat::zeros(3,1,CV_64F);
 	pcl::PCLPointCloud2 pcl_pc2;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
 	
 	// TODO: Do this only once per submap (SRO and TRO should be constant for each cloud).
-	// Convert input PointCloud2 to a PointXYZ cloud temp_cloud
-	pcl_conversions::toPCL(*input,pcl_pc2);
-    pcl::fromPCLPointCloud2(pcl_pc2,*temp_cloud);
-    
-    // PointXYZ file is in submapCloud
-    
-    // Perform ICP on temp_cloud
-    /*icp.setInputCloud(temp_cloud);
- 	icp.setInputTarget(submapCloud);
-    
-    // Align to Final cloud
-    pcl::PointCloud<pcl::PointXYZ> Final;
-    icp.align(Final);
-    
+	if (next_map){
+		// Convert input PointCloud2 to a PointXYZ cloud temp_cloud
+		pcl_conversions::toPCL(*input,pcl_pc2);
+		pcl::fromPCLPointCloud2(pcl_pc2,*temp_cloud);
+		temp_cloud->is_dense = false;
+		// PointXYZ file is in submapCloud
+		
+		// Perform ICP on temp_cloud
+		icp.setInputSource(temp_cloud);
+	 	icp.setInputTarget(submapCloud);
+		
+		// Align to Final cloud
+		pcl::PointCloud<pcl::PointXYZ> Final;
+		icp.align(Final);
+		
+		// DEBUG: Save aligned cloud to file 
+		pcl::io::savePCDFileASCII ("aligned.pcd", Final);
+		
+		// ICP results:
+		std::cout << "has converged:" << icp.hasConverged() << " score: " <<
+  		icp.getFitnessScore() << std::endl;
 
-    // Obtain error displacement and transformation matrix
-    // SRO = error displacement, TRO = error transform
-    // TODO: Work out what coordinates SRO is in.
-    cout << "transform after ICP: " << icp.getFinalTransformation() << endl;
-   */ //
+		// Obtain error displacement and transformation matrix
+		// SRO = error displacement, TRO = error transform
+		// TODO: Work out what coordinates SRO is in.
+		//cout << "transform after ICP: " << icp.getFinalTransformation() << endl;
+		for (int i = 0; i < 3; i++){
+			for (int j = 0; j < 3; j++) {
+				TROhat.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+			}
+			SROOhat.at<double>(i) = icp.getFinalTransformation()(i,3);
+		}
+		cout << "TROhat: " << TROhat << endl;
+		cout << "SROOhat: " << SROOhat << endl;
+		
+		SROLhat = TOLhat*SROOhat;
+		cout << "SROLhat: " << SROLhat << endl;
+		
+		// Set next_map to false
+		next_map = false;
+    }
     
 }
 
@@ -151,7 +175,7 @@ Author: JDev 161125
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
-	Mat QCRhat = Mat::zeros(3,1,CV_64F);
+	Mat QCRhat;
 	
 	// Process
 	// Obtain SCRC
@@ -164,10 +188,10 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	QCRhat.push_back(odomMsg->pose.pose.orientation.y); 
 	QCRhat.push_back(odomMsg->pose.pose.orientation.z); 
 	QCRhat.push_back(odomMsg->pose.pose.orientation.w); 
-	
+	ROS_INFO_STREAM("QCRhat: " << QCRhat);
 	// Convert QCR to TCR
 	TCRhat = quat2dcm(QCRhat);
-	
+	//ROS_INFO_STREAM("TCRhat: " << TCRhat);
 	// Compute SRLLhat and TRLhat - needs to only be done once per submap - constant.
 	
 	// VO alone approach. This will need TCLhat and SCLLhat to be initialised somehow.
@@ -178,10 +202,15 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// VO + ICP approach:
 	TRLhat = TROhat*TOLhat;			// TODO: Get TOLhat embedded into posefiles, get TROhat from ICP
 	SRLLhat = SROLhat + SOLLhat; 	// TODO: Get SROL from ICP (SOLLhat from posefile)
+	ROS_INFO_STREAM("TRLhat: " << TRLhat);
+	//ROS_INFO_STREAM("TROhat: " << TROhat);
+	//ROS_INFO_STREAM("TOLhat: " << TOLhat);
 	
 	// 'Truth' SRLL and TRL
+	TCL = TCB*quat2dcm(QBL);
 	TRL = TCRhat.t()*TCL;						// Need TCL
 	SRLL = -TRL*SCRChat + SCLL;				// Need SCLL
+	ROS_INFO_STREAM("TRL (truth): " << TRL);
 	
 	// Update TCLhat and SCLLhat
 	TCLhat = TCRhat*TRLhat;
@@ -226,7 +255,7 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	//ROS_INFO_STREAM("QCLhat: " << QCLhat);
 	//ROS_INFO_STREAM("QCL_cmd: :" << QCL_cmd);
 	
-
+	
 	
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
@@ -243,6 +272,7 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 					QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
 					// Convert SCLL_cmd to SBLL_cmd (SBLL = SBCL + SCLL)
 					SBLL_cmd = TCLhat.t()*TCB*SCBB + SCLL_cmd;
+					ROS_INFO_STREAM("SBLL_cmd: " << SBLL_cmd);
 					TBL_cmd = TCB.t()*quat2dcm(QCL_cmd);
 					QBL_cmd = dcm2quat(TBL_cmd);
 					// Export commanded pose as gmBL_cmd
@@ -296,15 +326,22 @@ void generateWaypoints(string poseFileName){
 	// Generate waypoints as SCLL_cmd and QCL_cmd using SCOLhat and SOLLhat and QCL from pose file
 		// SCLL_cmd = SCOLhat + SOLLhat
 		// QCL_cmd = posefile.QCL
-	extractPosesFromFile(poseFile, SOLLhat, vecSCOL, vecQCL);
+	extractPosesFromFile(poseFile, SOLLhat, QOLhat, vecSCOL, vecQCL);
 	
 	// Subsample pose file
 	// .. TODO
 	
+	// Set TOLhat
+	TOLhat = quat2dcm(QOLhat);
+	
 	// Make first waypoint a takeoff waypoint
-	temp_wp.position.x = -1;
-	temp_wp.position.y = -1;
+	temp_wp.position.x = 0;
+	temp_wp.position.y = 0;
 	temp_wp.position.z = 5;
+	temp_wp.orientation.x = vecQCL[0].at<double>(0);
+	temp_wp.orientation.y = vecQCL[0].at<double>(1);
+	temp_wp.orientation.z = vecQCL[0].at<double>(2);
+	temp_wp.orientation.w = vecQCL[0].at<double>(3);
 	waypointsCL.push_back(temp_wp);
 	
 	// Create waypoints
@@ -328,6 +365,7 @@ void generateWaypoints(string poseFileName){
 // -------------------------------------------------------------
 /*
 loadSubmapPCD -	Loads a Pointcloud into memory
+				Adapted from: http://pointclouds.org/documentation/tutorials/reading_pcd.php
 
 Author: JDev 161125
 	
@@ -338,8 +376,13 @@ void loadSubmapPCD(string PCDFileName){
 	// ..
 	
 	// Load submap into a pointxyz variable
-	// ..
-	
+	if (pcl::io::loadPCDFile<pcl::PointXYZ> (PCDFileName.c_str(), *submapCloud) == -1) //* load the file
+	  {
+		ROS_ERROR_STREAM("Couldn't read file " << PCDFileName.c_str() << ". Exiting.");
+		ros::shutdown(); 
+	  }
+	// Set submapCloud params
+	submapCloud->is_dense = false;
 }
 
 
@@ -360,7 +403,7 @@ int main(int argc, char **argv){
 
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
-	//ros::Subscriber cloudSub;	// Point cloud subscriber
+	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber poseSub;
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	TakeoffClient TAC(nh, "action/takeoff");	// Takeoff action client
@@ -376,7 +419,7 @@ int main(int argc, char **argv){
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, odomCallBack);
 	// Subscribe to cloud_map topic
-	//cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 1000, cloudCallBack);
 	// Subscribe to positionCallBack
 	poseSub = nh.subscribe("/ground_truth_to_tf/pose", 1000, positionCallBack);
 	
@@ -389,6 +432,7 @@ int main(int argc, char **argv){
 	// Set TCB/SCBB
 	QCB.at<double>(1) = 0.707; QCB.at<double>(3) = 0.707;
 	TCB = quat2dcm(QCB);
+	cout << "TCB main: " << TCB << endl;
 	// Set SCBB
 	SCBB.at<double>(0) = 0.1;
 	SCBB.at<double>(2) = -0.03;
@@ -409,7 +453,7 @@ int main(int argc, char **argv){
 	SBLL_cmd = TCLhat.t()*TCB*SCBB + SCLL_cmd;
 	TBL_cmd = TCB.t()*quat2dcm(QCL_cmd);
 	QBL_cmd = dcm2quat(TBL_cmd);
-	
+	ROS_INFO_STREAM("SCBB: " << SCBB);
 	ROS_INFO_STREAM("SBLL_cmd: " << SBLL_cmd);
 	ROS_INFO_STREAM("QBL_cmd: " << QBL_cmd);
 	
@@ -450,7 +494,8 @@ int main(int argc, char **argv){
 		PAC.sendGoal(poseGoal);
 		
 		// If it is the first take off, reset odometry when the first waypoint is reached.
-		ROS_INFO_STREAM("QBL: " << QBL);
+		//ROS_INFO_STREAM("QBL: " << QBL);
+		//ROS_INFO_STREAM("firstTakeOff: " << firstTakeOff << " fabs(norm(SBLL_cmd)): " << fabs(norm(SBLL_cmd)));
 		if (firstTakeOff && fabs(norm(SBLL_cmd)) > 0.0) {
 			if( fabs( SBLL.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBL.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
 				if( fabs( SBLL.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBL.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {
@@ -459,10 +504,12 @@ int main(int argc, char **argv){
 						cout << "SBLL: " << SBLL << endl;
 						cout << "SBLL_cmd: " << SBLL_cmd << endl;
 						if (!resetOdometryClient.call(emptySrv)){
-							ROS_INFO("[teach_node] Failed to reset odometry.");
+							ROS_INFO("[repeat_node] Failed to reset odometry.");
 						} else {
-							ROS_INFO("[teach_node] Succeeded in resetting odometry.");
+							ROS_INFO("[repeat_node] Succeeded in resetting odometry.");
 							firstTakeOff = false;
+							// DEBUG TODO: GET RID OF THIS:
+							next_map = true;
 						}
 					}
 				}

@@ -30,7 +30,7 @@ Author: JDev 161108
 	
 */
 // -------------------------------------------------------------
-void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFileName){	
+void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, Mat QOL, string poseFileName){	
 	// Local variables	
 	Mat TCL = Mat::eye(3,3,CV_64F); // Set TCS to eye(3) i.e. S frame aligned to (initial) cam frame.
 	Mat SCOL = Mat::zeros(3,1,CV_64F);
@@ -40,7 +40,9 @@ void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 	// Open the output file
 	outputFile.open(poseFileName.c_str());
 	
+	// Save SOLL and QOL
 	outputFile << "SOLL: " << SOLL.at<double>(0) << " " << SOLL.at<double>(1) << " " << SOLL.at<double>(2) << endl;
+		outputFile << "QOLhat: " << QOL.at<double>(0) << " " << QOL.at<double>(1) << " " << QOL.at<double>(2) << QOL.at<double>(3) << endl;
 	// Loop
 	// for each pose (SCOL/TCL) stored in vecSCOL/vecTCL: 
 	for (int i = 0; i < vecSCOL.size(); i++){
@@ -63,7 +65,7 @@ void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, string poseFi
 
 
 
-bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, vector<Mat> &vecQCL){
+bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, Mat &QOL vector<Mat> &vecSCOL, vector<Mat> &vecQCL){
 	// Local variables
 	string tempString;
 	size_t pos = 0;
@@ -77,8 +79,11 @@ bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, ve
 	// Code
 	// Get first line (format: SOLL: P1 P2 P3)
 	poseFile >> discard >> SOLL.at<double>(0) >> SOLL.at<double>(1) >> SOLL.at<double>(2);
-	
+	// Get second line (format: QOLhat QX QY QZ QW):
+	poseFile >> discard >> QOL.at<double>(0) >> QOL.at<double>(1) >> QOL.at<double>(2) >> QOL.at<double>(3);
+
 	cout << "SOLL: " << SOLL << endl;
+	cout << "SOLL: " << QOL << endl;
 	
 	// Get line from posefile. Format: SSV - P1 P2 P3 QX QY QZ QW
 	while (!poseFile.eof()) {
@@ -86,7 +91,7 @@ bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, vector<Mat> &vecSCOL, ve
 		>> QCL.at<double>(1) >> QCL.at<double>(2) >> QCL.at<double>(3);
 		// Push back vectors
 		vecSCOL.push_back(SCOL.clone());
-		vecQCL.push_back(quat2dcm(QCL).clone());	
+		vecQCL.push_back(QCL.clone());	
 	}
 	return true;
 }
