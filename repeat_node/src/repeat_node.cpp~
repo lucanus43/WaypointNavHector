@@ -92,7 +92,7 @@ using namespace cv;
 
 // Point cloud registration variables
 	Mat TROhat = Mat::zeros(3,3,CV_64F);
-	Mat SROLhat = Mat::zeros(3,1,CV_64F);
+	Mat SORLhat = Mat::zeros(3,1,CV_64F);
 
 
 // Takeoff client (SimpleActionClient from actionlib)
@@ -110,7 +110,7 @@ Author: JDev 161125
 // -------------------------------------------------------------
 void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
 	// Local Variables
-	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat SORRhat = Mat::zeros(3,1,CV_64F);
 	pcl::PCLPointCloud2 pcl_pc2;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
@@ -126,12 +126,24 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 		// Perform ICP on temp_cloud
 		icp.setInputSource(temp_cloud);
 	 	icp.setInputTarget(submapCloud);
+	 	// Set parameters for icp
+	 	// Set the max correspondence distance to 5cm (e.g., correspondences with higher distances will be ignored)
+		icp.setMaxCorrespondenceDistance (5);
+		// Set the maximum number of iterations (criterion 1)
+		//icp.setMaximumIterations (100);
+		// Set the transformation epsilon (criterion 2)
+		icp.setTransformationEpsilon (1e-5);
+		// Set the euclidean distance difference epsilon (criterion 3)
+		//icp.setEuclideanFitnessEpsilon (1);
+		icp.setRANSACOutlierRejectionThreshold(0.5);
+	 	
 		
 		// Align to Final cloud
 		pcl::PointCloud<pcl::PointXYZ> Final;
 		icp.align(Final);
 		
 		// DEBUG: Save aligned cloud to file 
+		pcl::io::savePCDFileASCII ("pre-aligned.pcd", *temp_cloud);
 		pcl::io::savePCDFileASCII ("aligned.pcd", Final);
 		
 		// ICP results:
@@ -146,13 +158,14 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 			for (int j = 0; j < 3; j++) {
 				TROhat.at<double>(i,j) = icp.getFinalTransformation()(i,j);
 			}
-			SRORhat.at<double>(i) = icp.getFinalTransformation()(i,3);
+			SORRhat.at<double>(i) = icp.getFinalTransformation()(i,3);
 		}
 		cout << "TROhat: " << TROhat << endl;
-		cout << "SRORhat: " << SRORhat << endl;
-		
-		SROLhat = TRLhat.t()*SRORhat;
-		cout << "SROLhat: " << SROLhat << endl;
+		cout << "SORRhat: " << SORRhat << endl;
+		// DEBUG //
+		SORLhat = TRLhat.t()*SORRhat;
+		// DEBUG //
+		cout << "SORLhat: " << SORLhat << endl;
 		
 		// Set next_map to false
 		next_map = false;
@@ -177,6 +190,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
 	Mat QCRhat;
+	//Mat SORRhat = Mat::zeros(3,1,CV_64F);
 	
 	// Process
 	// Obtain SCRC
@@ -201,8 +215,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// SRLLhat = -TRLhat*SCRChat + SCLLhat;
 	
 	// VO + ICP approach:
-	TRLhat = TROhat.t()*TOLhat;			// TODO: Get TOLhat embedded into posefiles, get TROhat from ICP
-	SRLLhat = SROLhat + SOLLhat; 	// TODO: Get SROL from ICP (SOLLhat from posefile)
+	TRLhat = TROhat*TOLhat;			// TODO: Get TOLhat embedded into posefiles, get TROhat from ICP
+	SRLLhat = -SORLhat + SOLLhat; 	// TODO: Get SROL from ICP (SOLLhat from posefile)
 	//ROS_INFO_STREAM("TRLhat: " << TRLhat);
 	//ROS_INFO_STREAM("TROhat: " << TROhat);
 	//ROS_INFO_STREAM("TOLhat: " << TOLhat);
@@ -213,19 +227,22 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	TRL = TCRhat.t()*TCL;						// Need TCL
 	SCLL = TCL.t()*TCB*SCBB + SBLL;
 	SRLL = -TCL.t()*SCRChat + SCLL;				// Need SCLL
-	//ROS_INFO_STREAM("TRL (truth): " << TRL);
+	//ROS_INFO_STREAM("TCL (truth): " << TRL);
 	ROS_INFO_STREAM("SRLL (truth): " << SRLL);
 	
 	
 	// Update TCLhat and SCLLhat
+	// DEBUG //
+	//SORLhat.at<double>(0) = -0.229; SORLhat.at<double>(1) = -0.08; SORLhat.at<double>(2) = 0.298;
+	// DEBUG
 	TCLhat = TCRhat*TRLhat;						// TCL = TCR*TRL
 	SCLLhat = TCLhat.t()*SCRChat + SRLLhat;		// SCL = SCR + SRL
 	ROS_INFO_STREAM("SRLLhat: " << SRLLhat);
-	
+	//ROS_INFO_STREAM("TCLhat: " << TCLhat);
 	ROS_INFO_STREAM("SCLL (truth): " << SCLL);
 	ROS_INFO_STREAM("SCLLhat : " << SCLLhat);
 	
-	ROS_INFO_STREAM("TCRhat : " << TCRhat);
+	//ROS_INFO_STREAM("TCRhat : " << TCRhat);
 	// Calculate SBLLhat
 	SBLLhat = -TCLhat.t()*TCB*SCBB+SCLLhat; 	// SBLL = SBCL + SCLL
 	
@@ -421,6 +438,7 @@ int main(int argc, char **argv){
 	ros::Subscriber poseSub;
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	TakeoffClient TAC(nh, "action/takeoff");	// Takeoff action client
+	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
 	ros::ServiceClient resetOdometryClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom");
 	std_srvs::Empty emptySrv;
 	
@@ -525,6 +543,12 @@ int main(int argc, char **argv){
 							firstTakeOff = false;
 							// DEBUG TODO: GET RID OF THIS:
 							next_map = true;
+						}
+						// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+						if (!resetMapClient.call(emptySrv)){
+							ROS_INFO("[teach_node] Failed to reset map.");
+						} else {
+							ROS_INFO("[teach_node] Succeeded in resetting map.");
 						}
 					}
 				}
