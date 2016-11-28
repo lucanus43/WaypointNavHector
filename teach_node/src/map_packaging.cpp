@@ -83,7 +83,7 @@ bool extractPosesFromFile(fstream &poseFile, Mat &SOLL, Mat &QOL, vector<Mat> &v
 	poseFile >> discard >> QOL.at<double>(0) >> QOL.at<double>(1) >> QOL.at<double>(2) >> QOL.at<double>(3);
 
 	cout << "SOLL: " << SOLL << endl;
-	cout << "SOLL: " << QOL << endl;
+	cout << "QOL: " << QOL << endl;
 	
 	// Get line from posefile. Format: SSV - P1 P2 P3 QX QY QZ QW
 	while (!poseFile.eof()) {
