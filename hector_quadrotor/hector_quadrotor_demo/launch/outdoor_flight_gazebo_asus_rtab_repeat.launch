@@ -7,6 +7,7 @@
 
   <!-- Spawn simulated quadrotor uav -->
   <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor_with_asus.launch" >
+  <arg name="use_ground_truth_for_control" value="false"/>
 
   </include>
   

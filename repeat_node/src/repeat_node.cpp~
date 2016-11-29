@@ -251,6 +251,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	//ROS_INFO_STREAM("TCRhat : " << TCRhat);
 	// Calculate SBLLhat
 	SBLLhat = -TCLhat.t()*TCB*SCBB+SCLLhat; 	// SBLL = SBCL + SCLL
+
 	TBLhat = TCB.t()*TCLhat;					// TBL = TBC*TCL
 	QBLhat = dcm2quat(TBLhat);
 	// Send SBLLhat and TBLhat to gmBLhat for transmission
@@ -450,6 +451,7 @@ int main(int argc, char **argv){
 	ros::NodeHandle nh;
 
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
+	ros::Time begin = ros::Time::now();
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
 	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber poseSub;
@@ -473,11 +475,11 @@ int main(int argc, char **argv){
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 1, cloudCallBack);
 	// Subscribe to positionCallBack
-	//poseSub = nh.subscribe("/ground_truth_to_tf/pose", 1000, positionCallBack);
+	//poseSub = nh.subscribe("/ground_truth_to_tf/pose", 1, positionCallBack);
 	// Subscribe to estimated pose and not true pose
-	poseSub = nh.subscribe("/pose", 1000, positionCallBack);
+	//poseSub = nh.subscribe("/pose", 1000, positionCallBack);
 	// Publish to poseupdate
-	posePub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 1);
+	posePub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 10);
 	
 	// Initialise the PoseActionClient
 	PAC.waitForServer();
@@ -558,10 +560,7 @@ int main(int argc, char **argv){
 		// If it is the first take off, reset odometry when the first waypoint is reached.
 		//ROS_INFO_STREAM("QBL: " << QBL);
 		//ROS_INFO_STREAM("firstTakeOff: " << firstTakeOff << " fabs(norm(SBLL_cmd)): " << fabs(norm(SBLL_cmd)));
-		if (firstTakeOff && fabs(norm(SBLL_cmd)) > 0.0) {
-			if( fabs( SBLL.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBL.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
-				if( fabs( SBLL.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBL.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {
-					if( fabs( SBLL_cmd.at<double>(2) - SBLL_cmd.at<double>(2) )  < wp_radius && fabs( QBL.at<double>(2) -  QBL_cmd.at<double>(2) ) < wp_radius) {
+		if (firstTakeOff && fabs(ros::Time::now().toSec() - begin.toSec()) > 5) {
 						// reset odometry
 						cout << "SBLL: " << SBLL << endl;
 						cout << "SBLL_cmd: " << SBLL_cmd << endl;
@@ -579,9 +578,6 @@ int main(int argc, char **argv){
 						} else {
 							ROS_INFO("[teach_node] Succeeded in resetting map.");
 						}
-					}
-				}
-			}
 		}
 		// if waypoints complete
 			// if next submap exists, move to next submap. (set new waypoints/goal)
