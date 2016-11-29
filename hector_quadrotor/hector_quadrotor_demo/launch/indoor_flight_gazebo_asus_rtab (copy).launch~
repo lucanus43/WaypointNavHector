@@ -1,0 +1,37 @@
+<?xml version="1.0"?>
+
+<launch>
+
+  <!-- Start Gazebo with wg world running in (max) realtime -->
+  <include file="$(find hector_gazebo_worlds)/launch/small_indoor_scenario.launch"/>
+
+  <!-- Spawn simulated quadrotor uav -->
+  <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor_with_asus.launch" >
+  <arg name="use_ground_truth_for_control" value="false"/>
+
+  </include>
+  
+  <!-- Start rtabmap visualization -->
+  <include file="$(find rtabmap_ros)/launch/rtabmap.launch" >
+  	<arg name="rtabmap_args" value="--delete_db_on_start"/>
+  	<arg name="rviz" value="false"/>
+  	<arg name="rtabmapviz" value="true"/>
+  	<arg name="rgb_topic" value="/camera/rgb/image_raw"/>
+  	<arg name="depth_topic" value="/camera/depth/image_raw"/>
+  	<arg name="wait_for_transform" value="0.0"/>
+  	<arg name="queue_size" value="50"/>
+  </include>
+  	
+  <node pkg="rtabmap_ros" type="rgbd_odometry" name="rgbd_odometry">
+       <param name="Odom/ResetCountdown"              value="1" />
+  </node>
+  	
+
+  <!-- Start rviz visualization with preset config -->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_quadrotor_demo)/rviz_cfg/outdoor_flight_asus_cam.rviz"/>
+
+  <include file="$(find hector_quadrotor_teleop)/launch/xbox_controller.launch" >
+    <arg name="control_mode" value="position"/>
+  </include>
+
+</launch>

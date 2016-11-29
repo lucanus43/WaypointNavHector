@@ -14,6 +14,7 @@ find_package(catkin REQUIRED COMPONENTS
   std_msgs
   pcl_ros
   teach_node
+  geometry_msgs
   #pcl
 )
 
@@ -111,7 +112,7 @@ find_package( OpenCV REQUIRED )
 catkin_package(
   INCLUDE_DIRS include
  #LIBRARIES cvUtility map_packaging
-  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros teach_node #pcl
+  CATKIN_DEPENDS actionlib cv_bridge hector_uav_msgs image_transport roscpp rospy std_msgs pcl_ros geometry_msgs teach_node #pcl
   DEPENDS system_lib OpenCV
 )
 
