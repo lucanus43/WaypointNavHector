@@ -48,6 +48,7 @@ Date: 161125
 #include <tf/transform_listener.h> // for tf::getPrefixParam()
 #include <tf/transform_datatypes.h>
 #include "tf/LinearMath/Transform.h"	// To convert between geometry_msgs and TF libraries
+#include <rtabmap_ros/ResetPose.h>
 // JDev Files
 #include "cvUtility.h"
 #include "map_packaging.h"
@@ -64,7 +65,7 @@ using namespace cv;
 	Mat TCL_cmd;
 	Mat TBL_cmd = Mat::zeros(3,3,CV_64F);
 	Mat QCL_cmd;
-	double wp_radius = 0.5;
+	double wp_radius = 0.1;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
 	bool next_map = true;
@@ -76,6 +77,7 @@ using namespace cv;
 	geometry_msgs::PoseStamped gmBL_cmd;
 	geometry_msgs::PoseWithCovarianceStamped gmBLhat;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
+	double camyaw, campitch, camroll;
 
 // Odometry Variables
 	Mat TRLhat = Mat::zeros(3,3,CV_64F);
@@ -90,6 +92,8 @@ using namespace cv;
 	Mat SCLL = Mat::zeros(3,1,CV_64F);
 	Mat TBLhat = Mat::zeros(3,3,CV_64F);
 	Mat QBLhat = Mat::zeros(4,1,CV_64F);
+	Mat SCRChat = Mat::zeros(3,1,CV_64F);
+	Mat QCRhat;
 	int VOLossCounter = 0;
 	
 // Teach node variables
@@ -122,6 +126,8 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
 	
+	
+	ROS_INFO_STREAM("Entering cloudCallBack.");
 	// TODO: Do this only once per submap (SRO and TRO should be constant for each cloud).
 	if (next_map){	// DEBUG: SET TO ZERO TODO fix
 		// Convert input PointCloud2 to a PointXYZ cloud temp_cloud
@@ -135,14 +141,14 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	 	icp.setInputTarget(submapCloud);
 	 	// Set parameters for icp
 	 	// Set the max correspondence distance to 5cm (e.g., correspondences with higher distances will be ignored)
-		icp.setMaxCorrespondenceDistance (5);
+		//icp.setMaxCorrespondenceDistance (5);
 		// Set the maximum number of iterations (criterion 1)
-		icp.setMaximumIterations (10);
+		//icp.setMaximumIterations (10);
 		// Set the transformation epsilon (criterion 2)
-		icp.setTransformationEpsilon (1e-5);
+		//icp.setTransformationEpsilon (1e-5);
 		// Set the euclidean distance difference epsilon (criterion 3)
 		//icp.setEuclideanFitnessEpsilon (1);
-		icp.setRANSACOutlierRejectionThreshold(1);
+		//icp.setRANSACOutlierRejectionThreshold(1);
 	 	
 		
 		// Align to Final cloud
@@ -195,8 +201,8 @@ Author: JDev 161125
 
 void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	// Local variables
-	Mat SCRChat = Mat::zeros(3,1,CV_64F);
-	Mat QCRhat;
+	tf::Quaternion tfQCRhat;
+	geometry_msgs::Quaternion gmQCRhat;
 	//Mat SORRhat = Mat::zeros(3,1,CV_64F);
 	
 	// Process
@@ -216,7 +222,23 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	if ( fabs(norm(SCRChat)) == 0){
 		ROS_INFO_STREAM("VO lost. Incrementing counter.");
 		VOLossCounter++;
+		// handle VO loss (Update TCLhat, SCLL using IMU)
+		TCLhat = TCB*quat2dcm(QBLhat);
+		SCLLhat = quat2dcm(QBLhat.t())*TCB.t()*SCBB + SBLLhat;
+		// Get SCRChat and QCRhat
+		SCRChat = TCLhat*SCLLhat - TCLhat*SRLLhat;
+		QCRhat = dcm2quat(TCLhat*TRLhat.t());
+		
+		ROS_INFO("SCRChat (from IMU): [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
+		
+		// Get get camera angles
+		gmQCRhat.x = QCRhat.at<double>(0); gmQCRhat.y = QCRhat.at<double>(1); gmQCRhat.z = QCRhat.at<double>(2); gmQCRhat.w = QCRhat.at<double>(3); 
+   		tf::quaternionMsgToTF(gmQCRhat, tfQCRhat);
+    	tf::Matrix3x3(tfQCRhat).getEulerYPR(camyaw, campitch, camroll);
+		
 	} else {
+		VOLossCounter = 0;
+		ROS_INFO("SCRChat: [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
 		//ROS_INFO_STREAM("QCRhat: " << QCRhat);
 		// Convert QCR to TCR
 		TCRhat = quat2dcm(QCRhat);
@@ -262,6 +284,8 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 
 		TBLhat = TCB.t()*TCLhat;					// TBL = TBC*TCL
 		QBLhat = dcm2quat(TBLhat);
+		
+		ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	
 	} //endif
 	
@@ -275,6 +299,15 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	gmBLhat.pose.pose.orientation.z = QBLhat.at<double>(2);
 	gmBLhat.pose.pose.orientation.w = QBLhat.at<double>(3);
 	
+	gmBLhat.pose.covariance[0] = 0.5;
+	gmBLhat.pose.covariance[7] = 0.5;
+	gmBLhat.pose.covariance[14] = 0.5;
+	gmBLhat.pose.covariance[21] = 0.5;
+	gmBLhat.pose.covariance[28] = 0.5;
+	gmBLhat.pose.covariance[35] = 0.5;
+	
+
+
 	//ROS_INFO("Finished odomCallBack");
 }
 
@@ -369,7 +402,7 @@ Author: JDev 161130
 // -------------------------------------------------------------
 void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	// Local variables
-	// ..
+	tf::Quaternion tfQBLhat;
 	
 	// State estimate
 	SBLLhat.at<double>(0) = extPose->pose.position.x;
@@ -379,6 +412,8 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	QBLhat.at<double>(1) = extPose->pose.orientation.y;
 	QBLhat.at<double>(2) = extPose->pose.orientation.z;
 	QBLhat.at<double>(3) = extPose->pose.orientation.w;
+	
+
 }
 
 
@@ -500,8 +535,11 @@ int main(int argc, char **argv){
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	TakeoffClient TAC(nh, "action/takeoff");	// Takeoff action client
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
-	ros::ServiceClient resetOdometryClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom");
+	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");
 	std_srvs::Empty emptySrv;
+	rtabmap_ros::ResetPose odomResetSrv;
+	rtabmap_ros::ResetPose::Request odomResetReq;
+	rtabmap_ros::ResetPose::Response odomResetResp;
 	
 	
 	// Local variables
@@ -514,7 +552,7 @@ int main(int argc, char **argv){
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, odomCallBack);
 	// Subscribe to cloud_map topic
-	cloudSub = nh.subscribe("rtabmap/cloud_map", 1, cloudCallBack);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
 	// Subscribe to positionCallBack
 	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 1, truePositionCallBack);
 	// Subscribe to estimated pose and not true pose
@@ -604,21 +642,25 @@ int main(int argc, char **argv){
 			// reset odometry
 			cout << "SBLL: " << SBLL << endl;
 			cout << "SBLL_cmd: " << SBLL_cmd << endl;
-			if (!resetOdometryClient.call(emptySrv)){
+			// Reset odometry with SCRChat and QCRhat
+			odomResetReq.x = SCRChat.at<double>(0); odomResetReq.y = SCRChat.at<double>(1);  odomResetReq.z = SCRChat.at<double>(2);
+			odomResetReq.roll = camroll; odomResetReq.pitch = campitch; odomResetReq.yaw = camyaw; 
+			if (!resetOdometryClient.call(odomResetReq, odomResetResp)){
 				ROS_INFO("[repeat_node] Failed to reset odometry.");
 			} else {
 				ROS_INFO("[repeat_node] Succeeded in resetting odometry.");
 				firstTakeOff = false;
 				// Reset loss counter
 				VOLossCounter = 0;
+				
 				// DEBUG redo ICP TODO: GET RID OF THIS:
 				next_map = true;
 			}
 			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
 			if (!resetMapClient.call(emptySrv)){
-				ROS_INFO("[teach_node] Failed to reset map.");
+				ROS_INFO("[repeat_node] Failed to reset map.");
 			} else {
-				ROS_INFO("[teach_node] Succeeded in resetting map.");
+				ROS_INFO("[repeat_node] Succeeded in resetting map.");
 			}
 		}
 		// if waypoints complete
