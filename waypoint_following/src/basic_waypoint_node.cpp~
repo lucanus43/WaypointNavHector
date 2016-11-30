@@ -41,10 +41,7 @@ ROS_INFO("Current position: [%f,%f,%f]", current_pos->pose.position.x, current_p
 ROS_INFO("Current goal: [%f,%f,%f]", current_goal.pose.position.x, current_goal.pose.position.y, current_goal.pose.position.z);
 ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ): %f", fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ));
 
-// TODO	Force the pose of the UAV to converge to desired pose before moving to next WP.
-// ..
-
-
+// Force the pose of the UAV to converge to desired pose before moving to next WP.
 //If the current position is close to the current goal for X, Y, & Z
 	if( fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius && fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ) < wp_radius) {
 		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {

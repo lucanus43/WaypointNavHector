@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
 
 	//Publishers & Subscribers
 	// Publish to /position_goal, and Listen to /ground_truth_to_tf/pose (current pose)
-	pos_sub = nh.subscribe( "/ground_truth_to_tf/pose", 1000, position_cb );
+	pos_sub = nh.subscribe( "/pose", 1000, position_cb );
 	// Generate the waypoints
 	generate_waypoints();
 		
