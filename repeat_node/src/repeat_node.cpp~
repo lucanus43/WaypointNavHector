@@ -80,7 +80,7 @@ using namespace cv;
 	double camyaw, campitch, camroll;
 
 // Odometry Variables
-	Mat TRLhat = Mat::zeros(3,3,CV_64F);
+	Mat TRLhat = Mat::eye(3,3,CV_64F);
 	Mat TCRhat = Mat::zeros(3,3,CV_64F);
 	Mat SRLLhat = Mat::zeros(3,1,CV_64F);
 	Mat TCLhat= Mat::zeros(3,3,CV_64F);			// Needs initialising
@@ -93,7 +93,7 @@ using namespace cv;
 	Mat TBLhat = Mat::zeros(3,3,CV_64F);
 	Mat QBLhat = Mat::zeros(4,1,CV_64F);
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
-	Mat QCRhat;
+	Mat QCRhat = Mat::zeros(4,1,CV_64F);
 	int VOLossCounter = 0;
 	
 // Teach node variables
@@ -104,6 +104,7 @@ using namespace cv;
 // Point cloud registration variables
 	Mat TROhat = Mat::zeros(3,3,CV_64F);
 	Mat SORLhat = Mat::zeros(3,1,CV_64F);
+	Mat SORRhat = Mat::zeros(3,1,CV_64F);
 
 
 // Takeoff client (SimpleActionClient from actionlib)
@@ -121,7 +122,6 @@ Author: JDev 161125
 // -------------------------------------------------------------
 void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
 	// Local Variables
-	Mat SORRhat = Mat::zeros(3,1,CV_64F);
 	pcl::PCLPointCloud2 pcl_pc2;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr temp_cloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
@@ -167,21 +167,21 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 		// SRO = error displacement, TRO = error transform
 		// TODO: Work out what coordinates SRO is in.
 		//cout << "transform after ICP: " << icp.getFinalTransformation() << endl;
-		for (int i = 0; i < 3; i++){
-			for (int j = 0; j < 3; j++) {
-				TROhat.at<double>(i,j) = icp.getFinalTransformation()(i,j);
-			}
-			SORRhat.at<double>(i) = icp.getFinalTransformation()(i,3);
-		}
-		cout << "TROhat: " << TROhat << endl;
-		cout << "SORRhat: " << SORRhat << endl;
-		// DEBUG //
-		SORLhat = TRLhat.t()*SORRhat;
-		// DEBUG //
-		cout << "SORLhat: " << SORLhat << endl;
+
 		
 		// Set next_map to false
-		next_map = false;
+		if (icp.getFitnessScore() < 0.1){
+			next_map = false;
+			for (int i = 0; i < 3; i++){
+				for (int j = 0; j < 3; j++) {
+					TROhat.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+				}
+				SORRhat.at<double>(i) = icp.getFinalTransformation()(i,3);
+			}
+			cout << "TROhat: " << TROhat << endl;
+			cout << "SORRhat: " << SORRhat << endl;
+
+		}
     }
     
 }
@@ -212,10 +212,10 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	SCRChat.at<double>(2) = (odomMsg->pose.pose.position.z);
 	
 	// Get QCR from quaternion in odomMsg
-	QCRhat.push_back(odomMsg->pose.pose.orientation.x); 
-	QCRhat.push_back(odomMsg->pose.pose.orientation.y); 
-	QCRhat.push_back(odomMsg->pose.pose.orientation.z); 
-	QCRhat.push_back(odomMsg->pose.pose.orientation.w); 
+	QCRhat.at<double>(0) = (odomMsg->pose.pose.orientation.x); 
+	QCRhat.at<double>(1) = (odomMsg->pose.pose.orientation.y); 
+	QCRhat.at<double>(2) = (odomMsg->pose.pose.orientation.z); 
+	QCRhat.at<double>(3) = (odomMsg->pose.pose.orientation.w); 
 	
 	// If SCRC is zero (VO lost), increment VO loss counter. SBLLhat will not be set to zero.
 	// Else, perform VO as per normal.
@@ -225,11 +225,18 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		// handle VO loss (Update TCLhat, SCLL using IMU)
 		TCLhat = TCB*quat2dcm(QBLhat);
 		SCLLhat = quat2dcm(QBLhat.t())*TCB.t()*SCBB + SBLLhat;
+		ROS_INFO_STREAM("SCLLhat (IMU) : " << SCLLhat);
 		// Get SCRChat and QCRhat
 		SCRChat = TCLhat*SCLLhat - TCLhat*SRLLhat;
 		QCRhat = dcm2quat(TCLhat*TRLhat.t());
 		
-		ROS_INFO("SCRChat (from IMU): [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
+		TRLhat = quat2dcm(QCRhat).t()*TCLhat;
+		// DEBUG //
+		SORLhat = TRLhat.t()*SORRhat;
+		// DEBUG //
+		cout << "SORLhat: " << SORLhat << endl;
+		
+		//ROS_INFO("SCRChat (from IMU): [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
 		
 		// Get get camera angles
 		gmQCRhat.x = QCRhat.at<double>(0); gmQCRhat.y = QCRhat.at<double>(1); gmQCRhat.z = QCRhat.at<double>(2); gmQCRhat.w = QCRhat.at<double>(3); 
@@ -238,7 +245,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		
 	} else {
 		VOLossCounter = 0;
-		ROS_INFO("SCRChat: [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
+		//ROS_INFO("SCRChat (VO): [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
 		//ROS_INFO_STREAM("QCRhat: " << QCRhat);
 		// Convert QCR to TCR
 		TCRhat = quat2dcm(QCRhat);
@@ -249,14 +256,17 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		// e.g. TCLhat = TCB*TBLhat with TBLhat from IMU/magnetometer, SCLLhat = SCBL + SBLLhat with SBLLhat from GPS.
 		// TRLhat = TCRhat.t()*TCLhat;	
 		// SRLLhat = -TRLhat*SCRChat + SCLLhat;
-	
+
 		// VO + ICP approach:
 		TRLhat = TROhat*TOLhat;			// TODO: Get TOLhat embedded into posefiles, get TROhat from ICP
 		SRLLhat = -SORLhat + SOLLhat; 	// TODO: Get SROL from ICP (SOLLhat from posefile)
 		//ROS_INFO_STREAM("TRLhat: " << TRLhat);
 		//ROS_INFO_STREAM("TROhat: " << TROhat);
 		//ROS_INFO_STREAM("TOLhat: " << TOLhat);
-
+		// DEBUG //
+		SORLhat = TRLhat.t()*SORRhat;
+		// DEBUG //
+		cout << "SORLhat: " << SORLhat << endl;
 	
 		// 'Truth' SRLL and TRL
 		TCL = TCB*quat2dcm(QBL);
@@ -276,7 +286,7 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		///ROS_INFO_STREAM("SRLLhat: " << SRLLhat);
 		//ROS_INFO_STREAM("TCLhat: " << TCLhat);
 		//ROS_INFO_STREAM("SCLL (truth): " << SCLL);
-		//ROS_INFO_STREAM("SCLLhat : " << SCLLhat);
+		ROS_INFO_STREAM("SCLLhat (VO) : " << SCLLhat);
 	
 		//ROS_INFO_STREAM("TCRhat : " << TCRhat);
 		// Calculate SBLLhat
@@ -285,19 +295,31 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		TBLhat = TCB.t()*TCLhat;					// TBL = TBC*TCL
 		QBLhat = dcm2quat(TBLhat);
 		
-		ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
+		ROS_INFO("SBLLhat (VO): [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	
 	} //endif
 	
 	
 	// Send SBLLhat and TBLhat to gmBLhat for transmission
-	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
-	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
-	gmBLhat.pose.pose.position.z = SBLLhat.at<double>(2);
-	gmBLhat.pose.pose.orientation.x = QBLhat.at<double>(0);
-	gmBLhat.pose.pose.orientation.y = QBLhat.at<double>(1);
-	gmBLhat.pose.pose.orientation.z = QBLhat.at<double>(2);
-	gmBLhat.pose.pose.orientation.w = QBLhat.at<double>(3);
+	if (firstTakeOff){	// Set gmBL to truth for initial use.
+		ROS_INFO_STREAM("gmBLhat set to truth");
+		gmBLhat.pose.pose.position.x = SBLL.at<double>(0);
+		gmBLhat.pose.pose.position.y = SBLL.at<double>(1);
+		gmBLhat.pose.pose.position.z = SBLL.at<double>(2);
+		gmBLhat.pose.pose.orientation.x = QBL.at<double>(0);
+		gmBLhat.pose.pose.orientation.y = QBL.at<double>(1);
+		gmBLhat.pose.pose.orientation.z = QBL.at<double>(2);
+		gmBLhat.pose.pose.orientation.w = QBL.at<double>(3);
+		firstTakeOff = false;
+	} else {
+		gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
+		gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
+		gmBLhat.pose.pose.position.z = SBLLhat.at<double>(2);
+		gmBLhat.pose.pose.orientation.x = QBLhat.at<double>(0);
+		gmBLhat.pose.pose.orientation.y = QBLhat.at<double>(1);
+		gmBLhat.pose.pose.orientation.z = QBLhat.at<double>(2);
+		gmBLhat.pose.pose.orientation.w = QBLhat.at<double>(3);
+	}
 	
 	gmBLhat.pose.covariance[0] = 0.5;
 	gmBLhat.pose.covariance[7] = 0.5;
@@ -341,7 +363,7 @@ void truePositionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	QCLhat = dcm2quat(TCLhat);
 	
 	// Output message to user
-	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
+	ROS_INFO("SBLLhat (at true callback): [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
 	//ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
 	//ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
@@ -413,6 +435,7 @@ void positionCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	QBLhat.at<double>(2) = extPose->pose.orientation.z;
 	QBLhat.at<double>(3) = extPose->pose.orientation.w;
 	
+	ROS_INFO("SBLLhat (at positioncallback): [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 
 }
 
@@ -556,7 +579,7 @@ int main(int argc, char **argv){
 	// Subscribe to positionCallBack
 	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 1, truePositionCallBack);
 	// Subscribe to estimated pose and not true pose
-	poseSub = nh.subscribe("/pose", 1000, positionCallBack);
+	poseSub = nh.subscribe("/pose", 1, positionCallBack);
 	// Publish to poseupdate
 	posePub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 10);
 	
@@ -638,6 +661,7 @@ int main(int argc, char **argv){
 		
 		// If it is the first take off, reset odometry when the first waypoint is reached.
 		// OR if VO has been lost for > 10 frames
+
 		if ((firstTakeOff && (fabs(ros::Time::now().toSec() - begin.toSec()) > 5)) || VOLossCounter > 10) {
 			// reset odometry
 			cout << "SBLL: " << SBLL << endl;
@@ -649,7 +673,7 @@ int main(int argc, char **argv){
 				ROS_INFO("[repeat_node] Failed to reset odometry.");
 			} else {
 				ROS_INFO("[repeat_node] Succeeded in resetting odometry.");
-				firstTakeOff = false;
+				//firstTakeOff = false;
 				// Reset loss counter
 				VOLossCounter = 0;
 				
