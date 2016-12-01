@@ -101,8 +101,6 @@ using namespace cv;
 	Mat SCLLhat_vo = Mat::zeros(3,1,CV_64F);
 	Mat QBLhat_vo = Mat::zeros(4,1,CV_64F);
 	Mat SBLLhat_vo = Mat::zeros(3,1,CV_64F);
-	Mat QCLhat_vo = Mat::zeros(4,1,CV_64F);
-	Mat QRLhat_vo = Mat::zeros(4,1,CV_64F);
 	int VOLossCounter = 0;
 	
 // INS variables
@@ -112,26 +110,8 @@ using namespace cv;
 	Mat SCLLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat QBLhat_ins = Mat::zeros(4,1,CV_64F);
 	Mat SBLLhat_ins = Mat::zeros(3,1,CV_64F);
-	Mat QCLhat_ins = Mat::zeros(4,1,CV_64F);
 	
-// State variables
-	Mat SCRChat = Mat::zeros(3,1,CV_64F);
-	Mat SCRLhat = Mat::zeros(3,1,CV_64F);
-	Mat QCRhat = Mat::zeros(4,1,CV_64F);
-	Mat TRLhat = Mat::zeros(3,3,CV_64F);
-	Mat SRLLhat = Mat::zeros(3,1,CV_64F);
-	Mat TCLhat = Mat::zeros(3,3,CV_64F);
-	Mat SCLLhat = Mat::zeros(3,1,CV_64F);
-	Mat QBLhat = Mat::zeros(4,1,CV_64F);
-	Mat SBLLhat = Mat::zeros(3,1,CV_64F);
-	Mat QRLhat = Mat::zeros(4,1,CV_64F);
-	Mat QCLhat = Mat::zeros(4,1,CV_64F);
-	
-	
-typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionClient;
-
-// Function prototypes
-void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat);
+// 
 	
 	
 // ---------------------------- CALLBACK FUNCTIONS ---------------------------//	
@@ -178,20 +158,19 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	
 	// If SCRC is zero (VO lost), increment VO loss counter. SBLLhat will not be set to zero.
 	// Else, perform VO as per normal.
-	if ( fabs(norm(SCRChat_vo)) == 0){
+	if ( fabs(norm(SCRChat)) == 0){
 		ROS_INFO_STREAM("VO lost. Incrementing counter.");
 		VOLossCounter++;
 	} else {
 		// Use VO alone to update state
-		TCLhat_vo =  TCB*quat2dcm(QBLhat);					// QBLhat <- state update
-		TRLhat_vo = quat2dcm(QCRhat_vo).t()*TCLhat_vo;				
-		SCLLhat_vo = TCLhat_vo.t()*TCB*SCBB + SBLLhat;		// SBLLhat <- state update
-		SRLLhat_vo = -TRLhat*SCRChat_vo + SCLLhat_vo;		
+		TRLhat_vo = quat2dcm(QCRhat_vo).t()*TCLhat;				// TCLhat <- state update
+		SRLLhat_vo = -TRLhat*SCRChat_vo + SCLLhat;				// SCLLhat <- state update
+		TCLhat_vo = quat2dcm(QCRhat_vo)*TRLhat_vo;					
+		SCLLhat_vo = TCLhat_vo.t()*SCRChat_vo + SRLLhat_vo;		// SCL = SCR + SRL
 		
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -226,7 +205,6 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	SRLLhat_ins = -SCRLhat + SCLLhat_ins;						// SCRLhat <- State update
 	// TRL = TRC*TCB*TBL
 	QRLhat_ins = dcm2quat(quat2dcm(QCRhat).t()*TCB*quat2dcm(QBLhat_ins));	// QCRhat <- State update
-	
 	
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
@@ -361,7 +339,7 @@ Author: JDev 161201
 	
 */
 // -------------------------------------------------------------
-bool initVars(){
+void initVars(){
 	// Local Variables
 	// ..
 	
@@ -387,13 +365,17 @@ bool initVars(){
 	// Initialise VO variables
 	// SCLLhat_vo, QCLhat_vo, SBLLhat_vo, QBLhat_vo, SRLLhat_vo, QRLhat_vo
 	SBLLhat_vo = SBLL.clone();
-	QBLhat_vo = QBL.clone();
+	QBLhat_vo = SBLL.clone();
 	SCLLhat_vo = quat2dcm(QBL).t()*SCBB+SBLL;
 	QCLhat_vo = dcm2quat(TCB*quat2dcm(QBL));
 	SRLLhat_vo = quat2dcm(QBL).t()*SCBB+SBLL;	// SRLL = initial SCLL
 	QRLhat_vo = dcm2quat(TCB*quat2dcm(QBL));	// QRL = initial QCL
 
-		
+	
+	// Load first submap
+	generateWaypoints("pose_0.txt");			// Sets SOLL, TOL
+	loadSubmapPCD("submap_0.pcd");
+	
 	// Set first waypoint
 	SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
 	SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
@@ -404,7 +386,7 @@ bool initVars(){
 	QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
 	// Obtain SBLL_cmd, QBL_cmd
 	SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
-	QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
+	QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd););
 	// Export commanded pose as gmBL_cmd
 	gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
 	gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
@@ -413,16 +395,6 @@ bool initVars(){
 	gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
 	gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
 	gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
-	gmBL_cmd.header.stamp = ros::Time::now();
-	gmBL_cmd.header.seq++;
-	gmBL_cmd.header.frame_id = "world";
-	
-	// Return true if SBLL is not zero
-	if (fabs(norm(SBLL)) > 0){
-		return true;
-	} else {
-		return false;
-	}
 	
 }
 
@@ -451,8 +423,6 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	// ..
 	QCLhat = dcm2quat(TCB*quat2dcm(QBLhat));
 	QCRhat = dcm2quat(quat2dcm(QCLhat)*quat2dcm(QRLhat).t());
-	
-
 	
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
@@ -505,8 +475,6 @@ void waypointNav(){
 	
 	// Process
 	// Check to see if waypoints have been reached.
-	//ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
-	//ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
 			if( fabs( SCLLhat.at<double>(2) - SCLL_cmd.at<double>(2) )  < wp_radius && fabs( QCLhat.at<double>(2) -  QCL_cmd.at<double>(2) ) < wp_radius) {
@@ -617,9 +585,14 @@ int main(int argc, char **argv){
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
 
 	// Initialisation
+	// Subscribe to odom topic
+	odomSub = nh.subscribe("/rtabmap/odom", 1, voCallBack);
+	// Subscribe to cloud_map topic
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
 	// Subscribe to positionCallBack
-	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 10, truePositionCallBack);
-
+	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 1, truePositionCallBack);
+	// Subscribe to estimated pose and not true pose
+	poseSub = nh.subscribe("/pose", 1, insCallBack);
 	// Publish to poseupdate
 	posePub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 1);
 
@@ -627,36 +600,22 @@ int main(int argc, char **argv){
 	PAC.waitForServer();
 	ROS_INFO("Pose client initialised.");
 	
-	// Load first submap
-	generateWaypoints("pose_0.txt");			// Sets SOLL, TOL
-	loadSubmapPCD("submap_0.pcd");
-	
 	// Spin once for truth data to be obtained.
-	// Perform initialisation of variables.
-	ros::Rate rate(10.0);
-	ROS_INFO("Initialising variables.");
-	while(nh.ok() && !initVars()){
-		ros::spinOnce();
-		rate.sleep();
-		ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
-	}
+	ros::spinOnce();
 	
-	// Now odom, cloud and pose topics can be subscribed to
-	// Subscribe to odom topic
-	odomSub = nh.subscribe("/rtabmap/odom", 1, voCallBack);
-	// Subscribe to cloud_map topic
-	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
-	// Subscribe to estimated pose and not true pose
-	insPoseSub = nh.subscribe("/pose", 1, insCallBack);
+	// Perform initialisation of variables.
+	initVars();
+	
 	
 	// Loop
+	ros::Rate rate(10.0);
 	while (nh.ok()){
 		// Send current state to posePub (poseupdate topic)
 		posePub.publish(gmBLhat);
 		// Send current goal to pose client
 		poseGoal.target_pose = gmBL_cmd; 
 		PAC.sendGoal(poseGoal);
-		waypointNav();
+		
 		// If VO has been lost for 10 frames or more, reset VO:
 		if (VOLossCounter > 10){
 			resetVO();
@@ -681,7 +640,7 @@ int main(int argc, char **argv){
 			}
 		}
 		ros::spinOnce();
-		rate.sleep();
+		Rate.sleep();
 	}
 
 }
