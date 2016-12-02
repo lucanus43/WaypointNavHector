@@ -10,6 +10,29 @@
 
 
 //////////////////////////////////////////////////////////////////////////////////////////////
+// Normalises an input quaternion
+//
+// Jeffrey Devaraj 02/12/16
+//////////////////////////////////////////////////////////////////////////////////////////////
+Mat quatnormalise(Mat Q){
+	// Local variables
+	double den;
+	Mat returnQuat = Mat::zeros(4,1,CV_64F);
+	
+	// Process
+	if (fabs(norm(Q)) > 0){
+		den = sqrt(pow(Q.at<double>(0),2) + pow(Q.at<double>(1),2) + pow(Q.at<double>(2),2) + pow(Q.at<double>(3),2) );
+	
+		returnQuat.at<double>(0) = Q.at<double>(0)*(1/den);
+		returnQuat.at<double>(1) = Q.at<double>(1)*(1/den);
+		returnQuat.at<double>(2) = Q.at<double>(2)*(1/den);
+		returnQuat.at<double>(3) = Q.at<double>(3)*(1/den);
+		return returnQuat;
+	} else { return Q; }	// Zero quaternion
+}
+
+
+//////////////////////////////////////////////////////////////////////////////////////////////
 // Converts a DCM to angles - if the DCM is TBI, then the returned angles are Euler angles.
 //
 // Jeffrey Devaraj 12/07/16
@@ -50,7 +73,8 @@ Mat dcm2quat(Mat DCM) {
 	Q.at<double>(0) = (DCM.at<double>(1,2) - DCM.at<double>(2,1))/(4*Q.at<double>(3));
 	Q.at<double>(1) = (DCM.at<double>(2,0) - DCM.at<double>(0,2))/(4*Q.at<double>(3));
 	Q.at<double>(2) = (DCM.at<double>(0,1) - DCM.at<double>(1,0))/(4*Q.at<double>(3));
-
+	
+	Q = quatnormalise(Q).clone();
 	return Q;
 }
 
@@ -73,6 +97,8 @@ Mat quat2dcm(Mat quat) {
 	Q.at<double>(1) = quat.at<double>(0);
 	Q.at<double>(2) = quat.at<double>(1);
 	Q.at<double>(3) = quat.at<double>(2);
+	
+	Q = quatnormalise(Q).clone();
 	
 	DCM.at<double>(0,0) = pow(Q.at<double>(0),2) + pow(Q.at<double>(1),2) - pow(Q.at<double>(2),2) - pow(Q.at<double>(3),2);
 	DCM.at<double>(0,1) = 2*(Q.at<double>(1)*Q.at<double>(2) + Q.at<double>(0)*Q.at<double>(3));

@@ -35,6 +35,7 @@ double const RAD = CV_PI / 180;		// Convert deg->rad
 double const DEG = 180 / CV_PI;		// Convert rad->deg
 
 // Functions
+Mat quatnormalise(Mat Q);
 Mat dcm2angle(Mat DCM);
 Mat dcm2quat(Mat DCM);
 Mat quat2eul(Mat QUAT);

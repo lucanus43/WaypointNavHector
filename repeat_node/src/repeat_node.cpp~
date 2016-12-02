@@ -83,11 +83,7 @@ using namespace cv;
 	Mat TOLhat = Mat::zeros(3,3,CV_64F);
 	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
 	Mat QOLhat = Mat::zeros(4,1,CV_64F);
-	
-// Point cloud registration variables
-	Mat TROhat_icp = Mat::eye(3,3,CV_64F);
-	Mat SORLhat_icp = Mat::zeros(3,1,CV_64F);
-	Mat SORRhat_icp = Mat::zeros(3,1,CV_64F);
+
 	
 // VO variables
 	rtabmap_ros::ResetPose::Request odomResetReq;
@@ -114,6 +110,18 @@ using namespace cv;
 	Mat SBLLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_ins = Mat::zeros(4,1,CV_64F);
 	
+// ICP variables
+	Mat TROhat_icp = Mat::zeros(3,3,CV_64F);
+	Mat SORRhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QRLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SRLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat TCLhat_icp = Mat::zeros(3,3,CV_64F);
+	Mat SCLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QBLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SBLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QCLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SORLhat_icp = Mat::zeros(3,1,CV_64F);
+	
 // State variables
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
 	Mat SCRLhat = Mat::zeros(3,1,CV_64F);
@@ -126,13 +134,16 @@ using namespace cv;
 	Mat SBLLhat = Mat::zeros(3,1,CV_64F);
 	Mat QRLhat = Mat::zeros(4,1,CV_64F);
 	Mat QCLhat = Mat::zeros(4,1,CV_64F);
+	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat QROhat = Mat::zeros(4,1,CV_64F);
 	
 	
 typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionClient;
 
 // Function prototypes
 void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat);
-	
+void resetMap();
+void resetVO();
 	
 // ---------------------------- CALLBACK FUNCTIONS ---------------------------//	
 // -------------------------------------------------------------
@@ -145,6 +156,95 @@ Author: JDev 161125
 */
 // -------------------------------------------------------------
 void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
+	// Local Variables
+	pcl::PCLPointCloud2 pcl_pc2;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr observedCloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
+	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
+	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+	Mat errTRO = Mat::zeros(3,3,CV_64F);
+	Mat errSORO = Mat::zeros(3,1,CV_64F);
+	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
+	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
+	
+	if (doICP){
+		doICP = false;
+		pcl_conversions::toPCL(*input,pcl_pc2);
+		pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
+		observedCloud->is_dense = false;
+		// Set transformedObsCloud to have the same data as observedCloud
+		*transformedObsCloud = *observedCloud;
+		
+		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
+		// Obtain SPOR_obs using
+		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
+		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
+		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
+		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
+		// Correct SRORhat, TROhat.
+		
+		// Apply SRORhat to observedCloud
+		for (size_t i = 0; i < observedCloud->points.size (); ++i){
+			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
+			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
+			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
+			
+			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
+			
+    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
+			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
+			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
+		}
+		
+		// Perform icp on transformedObsCloud
+		icp.setInputSource(transformedObsCloud);
+	 	icp.setInputTarget(submapCloud);
+	 	
+	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	icp.align(alignedCloud);
+
+		// Obtain final transformation from ICP
+		// This is error in SORO and TRO
+		// If fitness score is < 0.1, no need to do ICP anymore.
+		if (icp.getFitnessScore() < 0.1){
+			// Align to alignedCloud
+			
+			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
+			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
+			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
+		
+		
+			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
+  			icp.getFitnessScore() << std::endl;
+			for (int i = 0; i < 3; i++){
+				for (int j = 0; j < 3; j++) {
+					errTRO.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+				}
+				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
+			}
+			cout << "errTRO: " << errTRO << endl;
+			cout << "errSORO: " << errSORO << endl;
+			
+			// Calculate SORRhat_icp, TROhat_icp
+			TROhat_icp = errTRO*quat2dcm(QROhat);				// QROhat <- state update
+			SORRhat_icp = TROhat_icp*errSORO - SRORhat;			// SORRhat <- state update
+			// Calculate QRLhat_icp, SRLLhat_icp
+			QRLhat_icp = dcm2quat(TROhat_icp*TOLhat);			// TOLhat <- submap
+			SORLhat_icp = quat2dcm(QRLhat_icp)*SORRhat_icp;
+			SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
+			// Calculate SCLLhat_icp, TCLhat_icp
+			TCLhat_icp = quat2dcm(QCRhat)*quat2dcm(QRLhat_icp);			// TCRhat <- state update
+			SCLLhat_icp = TCLhat_icp.t()*SCRChat + SRLLhat_icp;	// SCRChat <- state update	
+			// Calculate SBLLhat_icp, TBLhat_icp
+			SBLLhat_icp = -TCLhat_icp.t()*TCB*SCBB+SCLLhat_icp;	// TCB/SCBB <- Known
+			QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
+			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
+			// Perform state update
+			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+			resetMap();
+		}
+		
+	}
 }
 
 
@@ -186,12 +286,12 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		TCLhat_vo =  TCB*quat2dcm(QBLhat);					// QBLhat <- state update
 		TRLhat_vo = quat2dcm(QCRhat_vo).t()*TCLhat_vo;				
 		SCLLhat_vo = TCLhat_vo.t()*TCB*SCBB + SBLLhat;		// SBLLhat <- state update
-		SRLLhat_vo = -TRLhat*SCRChat_vo + SCLLhat_vo;		
+		SRLLhat_vo = -TCLhat_vo.t()*SCRChat_vo + SCLLhat_vo;	// SRLL = TLC*SRCC + SCLL	
 		
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
+		//ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -392,6 +492,22 @@ bool initVars(){
 	QCLhat_vo = dcm2quat(TCB*quat2dcm(QBL));
 	SRLLhat_vo = quat2dcm(QBL).t()*SCBB+SBLL;	// SRLL = initial SCLL
 	QRLhat_vo = dcm2quat(TCB*quat2dcm(QBL));	// QRL = initial QCL
+	
+	ROS_INFO_STREAM("TBL init: " << quat2dcm(QBL));
+	ROS_INFO_STREAM("TRLhat_vo init: " << quat2dcm(QRLhat_vo));
+	ROS_INFO_STREAM("TCB init: " << TCB);
+	
+	// Initialise ICP variables
+	SBLLhat_icp = SBLL.clone();
+	QBLhat_icp = QBL.clone();
+	SCLLhat_icp = quat2dcm(QBL).t()*SCBB+SBLL;
+	QCLhat_icp = dcm2quat(TCB*quat2dcm(QBL));
+	SRLLhat_icp = quat2dcm(QBL).t()*SCBB+SBLL;
+	QRLhat_icp = dcm2quat(TCB*quat2dcm(QBL));	
+	
+	// Since SRLLhat/QRLhat has been set, reset map to reflect this.
+	resetVO();
+	resetMap();
 
 		
 	// Set first waypoint
@@ -419,6 +535,9 @@ bool initVars(){
 	
 	// Return true if SBLL is not zero
 	if (fabs(norm(SBLL)) > 0){
+		// Update state (just in case), use any suffix. All variables are the same.
+		updateState(SBLLhat, QBLhat, SRLLhat_vo, QRLhat_vo);	
+		ROS_INFO("SBLL populated, exiting initialisation.");
 		return true;
 	} else {
 		return false;
@@ -451,9 +570,14 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	// ..
 	QCLhat = dcm2quat(TCB*quat2dcm(QBLhat));
 	QCRhat = dcm2quat(quat2dcm(QCLhat)*quat2dcm(QRLhat).t());
+	// ..
+	SRORhat = quat2dcm(QRLhat)*(SRLLhat - SOLLhat);		// SOLLhat <- Known		
+	QROhat = dcm2quat(quat2dcm(QRLhat)*TOLhat.t());
 	
-
-	
+	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
+	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
+	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
+	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
 	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
@@ -638,7 +762,6 @@ int main(int argc, char **argv){
 	while(nh.ok() && !initVars()){
 		ros::spinOnce();
 		rate.sleep();
-		ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	}
 	
 	// Now odom, cloud and pose topics can be subscribed to
@@ -668,7 +791,7 @@ int main(int argc, char **argv){
 				// Reset loss counter
 				VOLossCounter = 0;
 				// Redo ICP upon reset of VO
-				//doICP = true;
+				doICP = true;
 			}
 		}
 		if (clearMap){
