@@ -110,6 +110,7 @@ using namespace cv;
 	Mat SBLLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat SCRLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_ins = Mat::zeros(4,1,CV_64F);
+	Mat QCRhat_ins = Mat::zeros(4,1,CV_64F);
 	
 // ICP variables
 	Mat TROhat_icp = Mat::zeros(3,3,CV_64F);
@@ -127,9 +128,7 @@ using namespace cv;
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
 	Mat SCRLhat = Mat::zeros(3,1,CV_64F);
 	Mat QCRhat = Mat::zeros(4,1,CV_64F);
-	Mat TRLhat = Mat::zeros(3,3,CV_64F);
 	Mat SRLLhat = Mat::zeros(3,1,CV_64F);
-	Mat TCLhat = Mat::zeros(3,3,CV_64F);
 	Mat SCLLhat = Mat::zeros(3,1,CV_64F);
 	Mat QBLhat = Mat::zeros(4,1,CV_64F);
 	Mat SBLLhat = Mat::zeros(3,1,CV_64F);
@@ -293,8 +292,8 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
-		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
+		//ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
+		//ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -327,12 +326,14 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	// Calculate SRLLhat_ins and TRLhat_ins
 	SCLLhat_ins = quat2dcm(QBLhat_ins).t()*SCBB+SBLLhat_ins;
 	SCRLhat_ins = SCLLhat_ins - SRLLhat;				// SRLLhat <- State update	
-	// TODO: Check if SRLLhat_ins stays constant
+	// TODO: Check if SRLLhat_ins, QCRhat_ins stays constant
 	SRLLhat_ins = -SCRLhat_ins + SCLLhat_ins;						// SCRLhat <- State update
+	QCLhat_ins = dcm2quat(TCB*quat2dcm(QBLhat_ins));
+	QCRhat_ins = dcm2quat(quat2dcm(QCLhat_ins)*quat2dcm(QRLhat).t());		// QRLhat <- State update
 	// TRL = TRC*TCB*TBL
-	QRLhat_ins = dcm2quat(quat2dcm(QCRhat).t()*TCB*quat2dcm(QBLhat_ins));	// QCRhat <- State update
+	QRLhat_ins = dcm2quat(quat2dcm(QCRhat_ins).t()*TCB*quat2dcm(QBLhat_ins));	
 	
-	ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
+	//ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
 }
@@ -586,10 +587,18 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	SRORhat = quat2dcm(QRLhat)*(SRLLhat - SOLLhat);		// SOLLhat <- Known		
 	QROhat = dcm2quat(quat2dcm(QRLhat)*TOLhat.t());
 	
+	//
+
+
+
+
+	
+	
 	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
-	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
+	//ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
+	//ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
 	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
@@ -643,6 +652,7 @@ void waypointNav(){
 	// Check to see if waypoints have been reached.
 	//ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
 	//ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
+	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
 			if( fabs( SCLLhat.at<double>(2) - SCLL_cmd.at<double>(2) )  < wp_radius && fabs( QCLhat.at<double>(2) -  QCL_cmd.at<double>(2) ) < wp_radius) {
@@ -656,7 +666,7 @@ void waypointNav(){
 					QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
 					QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
 					QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
-					SBLL_cmd = -TCLhat.t()*TCB*SCBB + SCLL_cmd;
+					SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
 					QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
 					// gmBL_cmd
 					gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
