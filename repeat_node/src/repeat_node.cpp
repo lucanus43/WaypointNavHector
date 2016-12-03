@@ -108,6 +108,7 @@ using namespace cv;
 	Mat SCLLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat QBLhat_ins = Mat::zeros(4,1,CV_64F);
 	Mat SBLLhat_ins = Mat::zeros(3,1,CV_64F);
+	Mat SCRLhat_ins = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_ins = Mat::zeros(4,1,CV_64F);
 	
 // ICP variables
@@ -240,8 +241,8 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 			QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
 			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
 			// Perform state update
-			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
-			resetMap();
+			//updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+			//resetMap();
 		}
 		
 	}
@@ -283,15 +284,17 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		VOLossCounter++;
 	} else {
 		// Use VO alone to update state
-		TCLhat_vo =  TCB*quat2dcm(QBLhat);					// QBLhat <- state update
+		TCLhat_vo = quat2dcm(QCRhat_vo)*quat2dcm(QRLhat);	// TCB*quat2dcm(QBLhat);					// QBLhat <- state update
 		TRLhat_vo = quat2dcm(QCRhat_vo).t()*TCLhat_vo;				
-		SCLLhat_vo = TCLhat_vo.t()*TCB*SCBB + SBLLhat;		// SBLLhat <- state update
+		SCLLhat_vo = TCLhat_vo.t()*SCRChat_vo + SRLLhat; //TCLhat_vo.t()*TCB*SCBB + SBLLhat;		// SRLLhat <- state update
+		// TODO: Check if SRLLhat_vo stays constant:
 		SRLLhat_vo = -TCLhat_vo.t()*SCRChat_vo + SCLLhat_vo;	// SRLL = TLC*SRCC + SCLL	
 		
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		//ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
+		ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
+		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -322,12 +325,14 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	QBLhat_ins.at<double>(3) = extPose->pose.orientation.w;
 	
 	// Calculate SRLLhat_ins and TRLhat_ins
-	SCLLhat_ins = quat2dcm(QBLhat_ins).t()*SCBB+SBLLhat_ins;	
-	SRLLhat_ins = -SCRLhat + SCLLhat_ins;						// SCRLhat <- State update
+	SCLLhat_ins = quat2dcm(QBLhat_ins).t()*SCBB+SBLLhat_ins;
+	SCRLhat_ins = SCLLhat_ins - SRLLhat;				// SRLLhat <- State update	
+	// TODO: Check if SRLLhat_ins stays constant
+	SRLLhat_ins = -SCRLhat_ins + SCLLhat_ins;						// SCRLhat <- State update
 	// TRL = TRC*TCB*TBL
 	QRLhat_ins = dcm2quat(quat2dcm(QCRhat).t()*TCB*quat2dcm(QBLhat_ins));	// QCRhat <- State update
 	
-	
+	ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
 }
@@ -475,6 +480,10 @@ bool initVars(){
 	// Initialise state variables
 	// SBLLhat, QBLhat
 	SBLLhat = SBLL.clone(); QBLhat = QBL.clone();
+	SCLLhat = quat2dcm(QBL).t()*SCBB+SBLL;
+	QCLhat = dcm2quat(TCB*quat2dcm(QBL));
+	SRLLhat = quat2dcm(QBL).t()*SCBB+SBLL;
+	QRLhat = dcm2quat(TCB*quat2dcm(QBL));
 	
 	// Initialise INS variables
 	// SCLLhat_ins, QCLhat_ins, SBLLhat_ins, QBLhat_ins
@@ -507,7 +516,7 @@ bool initVars(){
 	
 	// Since SRLLhat/QRLhat has been set, reset map to reflect this.
 	resetVO();
-	//resetMap();
+	resetMap();
 
 		
 	// Set first waypoint
@@ -537,6 +546,7 @@ bool initVars(){
 	if (fabs(norm(SBLL)) > 0){
 		// Update state (just in case), use any suffix. All variables are the same.
 		updateState(SBLLhat, QBLhat, SRLLhat_vo, QRLhat_vo);	
+		ROS_INFO("SRLLhat init: [%f,%f,%f]", SRLLhat_vo.at<double>(0), SRLLhat_vo.at<double>(1), SRLLhat_vo.at<double>(2));
 		ROS_INFO("SBLL populated, exiting initialisation.");
 		return true;
 	} else {
@@ -570,6 +580,8 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	// ..
 	QCLhat = dcm2quat(TCB*quat2dcm(QBLhat));
 	QCRhat = dcm2quat(quat2dcm(QCLhat)*quat2dcm(QRLhat).t());
+	//..
+	SCRChat = quat2dcm(QCLhat)*SCRLhat;
 	// ..
 	SRORhat = quat2dcm(QRLhat)*(SRLLhat - SOLLhat);		// SOLLhat <- Known		
 	QROhat = dcm2quat(quat2dcm(QRLhat)*TOLhat.t());
