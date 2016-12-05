@@ -66,11 +66,12 @@ using namespace cv;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
 	bool next_map = true;
-	bool doICP = true;
+	bool doICP = false;
 	Mat QBL_cmd = Mat::zeros(4,1,CV_64F);
 	geometry_msgs::PoseStamped gmBL_cmd;
 	geometry_msgs::PoseWithCovarianceStamped gmBLhat;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
+	ros::Timer icpFrequency;
 	
 // Truth variables
 	Mat QCB = Mat::zeros(4,1,CV_64F);
@@ -99,7 +100,7 @@ using namespace cv;
 	Mat SBLLhat_vo = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_vo = Mat::zeros(4,1,CV_64F);
 	Mat QRLhat_vo = Mat::zeros(4,1,CV_64F);
-	int VOLossCounter = 0;
+	int VOLossCounter = 11;
 	
 // INS variables
 	Mat QRLhat_ins = Mat::zeros(4,1,CV_64F);
@@ -168,7 +169,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
 	
 	if (doICP){
-		
+		doICP = false;
 		pcl_conversions::toPCL(*input,pcl_pc2);
 		pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
 		observedCloud->is_dense = false;
@@ -208,7 +209,6 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 		// If fitness score is < 0.1, no need to do ICP anymore.
 		if (icp.getFitnessScore() < 0.05){
 			// Align to alignedCloud
-			doICP = false;
 			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
 			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
 			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
@@ -255,10 +255,10 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
 			ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 			// Perform state update
-			//updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
 			resetMap();
 		} else {
-			resetMap();
+			//resetMap();
 		}
 		
 	}
@@ -310,7 +310,7 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
 		//ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
-		//ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
+		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -350,7 +350,7 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	// TRL = TRC*TCB*TBL
 	QRLhat_ins = dcm2quat(quat2dcm(QCRhat_ins).t()*TCB*quat2dcm(QBLhat_ins));	
 	
-	//ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
+	ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
 }
@@ -603,14 +603,8 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	// ..
 	SRORhat = quat2dcm(QRLhat)*(SRLLhat - SOLLhat);		// SOLLhat <- Known		
 	QROhat = dcm2quat(quat2dcm(QRLhat)*TOLhat.t());
-	
+	ROS_INFO("SCRLhat: [%f,%f,%f]", SCRLhat.at<double>(0), SCRLhat.at<double>(1), SCRLhat.at<double>(2));
 	//
-
-
-
-
-	
-	
 	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
 	//ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
@@ -748,6 +742,22 @@ void resetMap(){
 }
 
 
+// -------------------------------------------------------------
+/*
+performICP -	Sets doICP to true such that ICP will be performed
+				on the next cycle.
+
+Author: JDev 161205
+	
+*/
+// -------------------------------------------------------------
+void performICP(const ros::TimerEvent& event){
+	// Local variables
+	// ..
+	
+	// Process
+	doICP = true;
+}
 
 // -------------------------------------------------------------
 /*
@@ -775,7 +785,6 @@ int main(int argc, char **argv){
 	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");
 	std_srvs::Empty emptySrv;
 
-	
 	// Local variables
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
 
@@ -803,13 +812,16 @@ int main(int argc, char **argv){
 		rate.sleep();
 	}
 	
+	// POST-INITIALISATION SUBSCRIPTIONS AND TIMERS
 	// Now odom, cloud and pose topics can be subscribed to
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, voCallBack);
 	// Subscribe to cloud_map topic
-	cloudSub = nh.subscribe("rtabmap/cloud_map", 1, cloudCallBack);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
 	// Subscribe to estimated pose and not true pose
 	insPoseSub = nh.subscribe("/pose", 1, insCallBack);
+	// Set a timer for the ICP
+	//icpFrequency = nh.createTimer( ros::Duration(5.0), performICP); // Automatically calls performICP() every 5.0 seconds
 	
 	// Loop
 	while (nh.ok()){
@@ -819,6 +831,7 @@ int main(int argc, char **argv){
 		poseGoal.target_pose = gmBL_cmd; 
 		PAC.sendGoal(poseGoal);
 		waypointNav();
+		
 		// If VO has been lost for 10 frames or more, reset VO:
 		if (VOLossCounter > 10){
 			resetVO();
