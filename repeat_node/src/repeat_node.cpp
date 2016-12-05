@@ -62,7 +62,7 @@ using namespace cv;
 	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F);
 	Mat TCL_cmd;
 	Mat QCL_cmd;
-	double wp_radius = 0.1;
+	double wp_radius = 0.2;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
 	bool next_map = true;

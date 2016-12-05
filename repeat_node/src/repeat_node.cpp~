@@ -258,7 +258,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
 			resetMap();
 		} else {
-			//resetMap();
+			resetMap();
 		}
 		
 	}
