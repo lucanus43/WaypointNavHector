@@ -65,13 +65,14 @@ using namespace cv;
 	double wp_radius = 0.2;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
-	bool next_map = true;
+	bool next_map = false;
 	bool doICP = false;
 	Mat QBL_cmd = Mat::zeros(4,1,CV_64F);
 	geometry_msgs::PoseStamped gmBL_cmd;
 	geometry_msgs::PoseWithCovarianceStamped gmBLhat;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	ros::Timer icpFrequency;
+	int mapCounter = 0;
 	
 // Truth variables
 	Mat QCB = Mat::zeros(4,1,CV_64F);
@@ -256,9 +257,9 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 			ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 			// Perform state update
 			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
-			resetMap();
+			//resetMap();
 		} else {
-			resetMap();
+			//resetMap();
 		}
 		
 	}
@@ -643,7 +644,36 @@ Author: JDev 161201
 	
 */
 // -------------------------------------------------------------
-void nextMap(){
+void nextSubmap(){
+	// Local variables
+	stringstream currentMapName;
+	stringstream currentPoseFileName;
+	
+	
+	// Set waypoint counter to zero
+	wp_counter = 0;
+	waypointsCL.clear();
+	
+	// Increment mapcounter
+	mapCounter++;
+	currentMapName << "submap_" << mapCounter << ".pcd";
+	currentPoseFileName << "pose_" << mapCounter << ".txt";
+	
+	// Load next submap
+	generateWaypoints(currentPoseFileName.str().c_str());
+	loadSubmapPCD(currentMapName.str().c_str());
+	
+	// Reset SRLLhat, QRLhat to reflect new R frame
+	SRLLhat = SCLLhat.clone();
+	SRLLhat_ins = SRLLhat.clone();
+	SRLLhat_vo = SRLLhat.clone();
+	SRLLhat_icp = SRLLhat.clone();
+	// QRLhat reset
+	QRLhat = QCLhat.clone();
+	QRLhat_vo = QRLhat.clone();
+	QRLhat_ins = QRLhat.clone();
+	QRLhat_icp = QRLhat.clone();
+	
 }
 
 
@@ -670,6 +700,7 @@ void waypointNav(){
 				//If there are more waypoints
 				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypointsCL.size() ) {
+					ROS_INFO("Satisfied waypoint condition.");
 					SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
 					SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
 					SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
@@ -692,12 +723,12 @@ void waypointNav(){
 					gmBL_cmd.header.seq++;
 					gmBL_cmd.header.frame_id = "world";
 					// Make UAV perform a localisation update before moving to next waypoint
-					doICP = true;
+					//doICP = true;
 				} else {
 					next_map = true;
 					ROS_INFO( "Finished the waypoint path!" );
 					// DEBUG TODO: get rid of
-					ros::shutdown();
+					//ros::shutdown();
 				}
 			}
 		}
@@ -856,6 +887,10 @@ int main(int argc, char **argv){
 				ROS_INFO("[repeat_node] Succeeded in resetting map.");
 				clearMap = false;
 			}
+		}
+		if (next_map){
+			next_map = false;
+			nextSubmap();
 		}
 		ros::spinOnce();
 		rate.sleep();
