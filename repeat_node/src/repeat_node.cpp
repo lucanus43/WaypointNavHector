@@ -73,6 +73,7 @@ using namespace cv;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	ros::Timer icpFrequency;
 	int mapCounter = 0;
+	bool exitRepeat = false;
 	
 // Truth variables
 	Mat QCB = Mat::zeros(4,1,CV_64F);
@@ -170,7 +171,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
 	
 	if (doICP){
-		doICP = false;
+		
 		pcl_conversions::toPCL(*input,pcl_pc2);
 		pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
 		observedCloud->is_dense = false;
@@ -209,6 +210,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
 		if (icp.getFitnessScore() < 0.05){
+			doICP = false;
 			// Align to alignedCloud
 			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
 			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
@@ -310,7 +312,7 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		//ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
+		ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
 		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
@@ -411,46 +413,46 @@ void generateWaypoints(string poseFileName){
 	// Read in waypoints from poseFile along with SOLLhat
 	poseFile.open(poseFileName.c_str());
 	if(poseFile.fail()){
-		ROS_ERROR_STREAM("Error: File stream " << poseFileName << " failed to open (check spelling)");
-		ros::shutdown(); 
-	}
+		ROS_INFO_STREAM("File stream " << poseFileName << " does not exist. No more submaps.");
+		exitRepeat = true;
+	} else {
+		// Generate waypoints as SCLL_cmd and QCL_cmd using SCOLhat and SOLLhat and QCL from pose file
+			// SCLL_cmd = SCOLhat + SOLLhat
+			// QCL_cmd = posefile.QCL
+		extractPosesFromFile(poseFile, SOLLhat, QOLhat, vecSCOL, vecQCL);
 	
-	// Generate waypoints as SCLL_cmd and QCL_cmd using SCOLhat and SOLLhat and QCL from pose file
-		// SCLL_cmd = SCOLhat + SOLLhat
-		// QCL_cmd = posefile.QCL
-	extractPosesFromFile(poseFile, SOLLhat, QOLhat, vecSCOL, vecQCL);
+		// Subsample pose file
+		// .. TODO
 	
-	// Subsample pose file
-	// .. TODO
+		// Set TOLhat
+		TOLhat = quat2dcm(QOLhat);
 	
-	// Set TOLhat
-	TOLhat = quat2dcm(QOLhat);
+		// Make first waypoint a takeoff waypoint
+		temp_wp.position.x = 0;
+		temp_wp.position.y = 0;
+		temp_wp.position.z = 5;
+		temp_wp.orientation.x = vecQCL[0].at<double>(0);
+		temp_wp.orientation.y = vecQCL[0].at<double>(1);
+		temp_wp.orientation.z = vecQCL[0].at<double>(2);
+		temp_wp.orientation.w = vecQCL[0].at<double>(3);
+		//waypointsCL.push_back(temp_wp);
 	
-	// Make first waypoint a takeoff waypoint
-	temp_wp.position.x = 0;
-	temp_wp.position.y = 0;
-	temp_wp.position.z = 5;
-	temp_wp.orientation.x = vecQCL[0].at<double>(0);
-	temp_wp.orientation.y = vecQCL[0].at<double>(1);
-	temp_wp.orientation.z = vecQCL[0].at<double>(2);
-	temp_wp.orientation.w = vecQCL[0].at<double>(3);
-	waypointsCL.push_back(temp_wp);
-	
-	// Create waypoints
-	for (int i = 0; i < vecSCOL.size(); i++){
-		// Commanded displacement vector rel. Local Level frame
-		SCLL_cmd = vecSCOL[i] + SOLLhat;
-		QCL_cmd = vecQCL[i];
-		// Geometry message
-		temp_wp.position.x = SCLL_cmd.at<double>(0);
-		temp_wp.position.y = SCLL_cmd.at<double>(1);
-		temp_wp.position.z = SCLL_cmd.at<double>(2);
-		temp_wp.orientation.x = QCL_cmd.at<double>(0);
-		temp_wp.orientation.y = QCL_cmd.at<double>(1);
-		temp_wp.orientation.z = QCL_cmd.at<double>(2);
-		temp_wp.orientation.w = QCL_cmd.at<double>(3);
-		// Waypoints (pose of C wrt. L)
-		waypointsCL.push_back(temp_wp);
+		// Create waypoints
+		for (int i = 0; i < vecSCOL.size(); i++){
+			// Commanded displacement vector rel. Local Level frame
+			SCLL_cmd = vecSCOL[i] + SOLLhat;
+			QCL_cmd = vecQCL[i];
+			// Geometry message
+			temp_wp.position.x = SCLL_cmd.at<double>(0);
+			temp_wp.position.y = SCLL_cmd.at<double>(1);
+			temp_wp.position.z = SCLL_cmd.at<double>(2);
+			temp_wp.orientation.x = QCL_cmd.at<double>(0);
+			temp_wp.orientation.y = QCL_cmd.at<double>(1);
+			temp_wp.orientation.z = QCL_cmd.at<double>(2);
+			temp_wp.orientation.w = QCL_cmd.at<double>(3);
+			// Waypoints (pose of C wrt. L)
+			waypointsCL.push_back(temp_wp);
+		}
 	}
 }
 
@@ -471,7 +473,7 @@ void loadSubmapPCD(string PCDFileName){
 	if (pcl::io::loadPCDFile<pcl::PointXYZ> (PCDFileName.c_str(), *submapCloud) == -1) //* load the file
 	  {
 		ROS_ERROR_STREAM("Couldn't read file " << PCDFileName.c_str() << ". Exiting.");
-		ros::shutdown(); 
+		exitRepeat = true;
 	  }
 	// Set submapCloud params
 	submapCloud->is_dense = false;
@@ -608,7 +610,7 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	//
 	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
-	//ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
+	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	//ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
 	// gmBLhat for publishing
@@ -649,7 +651,8 @@ void nextSubmap(){
 	stringstream currentMapName;
 	stringstream currentPoseFileName;
 	
-	
+	// Inform user
+	ROS_INFO("Initialising next submap.");
 	// Set waypoint counter to zero
 	wp_counter = 0;
 	waypointsCL.clear();
@@ -673,6 +676,39 @@ void nextSubmap(){
 	QRLhat_vo = QRLhat.clone();
 	QRLhat_ins = QRLhat.clone();
 	QRLhat_icp = QRLhat.clone();
+	// Reset SCRC
+	SCRChat = Mat::zeros(3,1,CV_64F);
+	
+	// Reset VO and map
+	resetVO();
+	resetMap();
+	
+	// Set system to do ICP
+	doICP = true;
+	
+	// Set first waypoint
+	SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
+	SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
+	SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
+	QCL_cmd.at<double>(0) = waypointsCL.at(wp_counter).orientation.x;
+	QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
+	QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
+	QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+	// Obtain SBLL_cmd, QBL_cmd
+	SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
+	QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
+	// Export commanded pose as gmBL_cmd
+	gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
+	gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
+	gmBL_cmd.pose.position.z = SBLL_cmd.at<double>(2);
+	gmBL_cmd.pose.orientation.x = QBL_cmd.at<double>(0);
+	gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
+	gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
+	gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
+	gmBL_cmd.header.stamp = ros::Time::now();
+	gmBL_cmd.header.seq++;
+	gmBL_cmd.header.frame_id = "world";
+	
 	
 }
 
@@ -691,8 +727,9 @@ void waypointNav(){
 	
 	// Process
 	// Check to see if waypoints have been reached.
-	//ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
-	//ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
+	ROS_INFO_STREAM("wp_counter: " << wp_counter << " waypointsCL.size(): " << waypointsCL.size());
+	ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
+	ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
 	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
 	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
@@ -755,6 +792,7 @@ void resetVO(){
     tf::Matrix3x3(tfQCRhat).getEulerYPR(QCRhatyaw, QCRhatpitch, QCRhatroll);
 	
 	// Set request for reset
+	ROS_INFO("SCRChat (reset): [%f,%f,%f]", SCRChat.at<double>(0), SCRChat.at<double>(1), SCRChat.at<double>(2));
 	odomResetReq.x = SCRChat.at<double>(0); odomResetReq.y = SCRChat.at<double>(1);  odomResetReq.z = SCRChat.at<double>(2);
 	odomResetReq.roll = QCRhatroll; odomResetReq.pitch = QCRhatpitch; odomResetReq.yaw = QCRhatyaw; 
 }
@@ -815,7 +853,8 @@ int main(int argc, char **argv){
 	ros::Publisher posePub;
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
-	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");
+	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");	// Reset to specified SCRChat
+	ros::ServiceClient resetOdometryToZero = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom"); // Allows odom to be reset to zero
 	std_srvs::Empty emptySrv;
 
 	// Local variables
@@ -840,7 +879,7 @@ int main(int argc, char **argv){
 	// Perform initialisation of variables.
 	ros::Rate rate(10.0);
 	ROS_INFO("Initialising variables.");
-	while(nh.ok() && !initVars()){
+	while(!exitRepeat && nh.ok() && !initVars()){
 		ros::spinOnce();
 		rate.sleep();
 	}
@@ -857,7 +896,7 @@ int main(int argc, char **argv){
 	//icpFrequency = nh.createTimer( ros::Duration(5.0), performICP); // Automatically calls performICP() every 5.0 seconds
 	
 	// Loop
-	while (nh.ok()){
+	while (!exitRepeat && nh.ok()){
 		// Send current state to posePub (poseupdate topic)
 		posePub.publish(gmBLhat);
 		// Send current goal to pose client
@@ -865,8 +904,15 @@ int main(int argc, char **argv){
 		PAC.sendGoal(poseGoal);
 		waypointNav();
 		
-		// If VO has been lost for 10 frames or more, reset VO:
-		if (VOLossCounter > 10){
+		// Proceed to next map if next map is requested.
+		if (next_map){
+			resetOdometryToZero.call(emptySrv);
+			next_map = false;
+			nextSubmap();
+		}
+		
+		// If VO has been lost for 10 frames or more, reset VO, or if new map is requested
+		if (next_map || (VOLossCounter > 10)){
 			resetVO();
 			// Send reset request
 			if (!resetOdometryClient.call(odomResetReq, odomResetResp)){
@@ -888,13 +934,11 @@ int main(int argc, char **argv){
 				clearMap = false;
 			}
 		}
-		if (next_map){
-			next_map = false;
-			nextSubmap();
-		}
 		ros::spinOnce();
 		rate.sleep();
 	}
+	
+	ROS_INFO_STREAM("Finished Repeat Node.");
 
 }
 
