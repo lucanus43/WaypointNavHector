@@ -691,6 +691,8 @@ void waypointNav(){
 					gmBL_cmd.header.stamp = ros::Time::now();
 					gmBL_cmd.header.seq++;
 					gmBL_cmd.header.frame_id = "world";
+					// Make UAV perform a localisation update before moving to next waypoint
+					doICP = true;
 				} else {
 					next_map = true;
 					ROS_INFO( "Finished the waypoint path!" );

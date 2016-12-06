@@ -62,7 +62,7 @@ using namespace cv;
 	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F);
 	Mat TCL_cmd;
 	Mat QCL_cmd;
-	double wp_radius = 0.1;
+	double wp_radius = 0.2;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
 	bool next_map = true;
@@ -169,7 +169,6 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
 	
 	if (doICP){
-		doICP = false;
 		pcl_conversions::toPCL(*input,pcl_pc2);
 		pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
 		observedCloud->is_dense = false;
@@ -208,6 +207,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
 		if (icp.getFitnessScore() < 0.05){
+			doICP = false;
 			// Align to alignedCloud
 			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
 			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
@@ -691,6 +691,8 @@ void waypointNav(){
 					gmBL_cmd.header.stamp = ros::Time::now();
 					gmBL_cmd.header.seq++;
 					gmBL_cmd.header.frame_id = "world";
+					// Make UAV perform a localisation update before moving to next waypoint
+					doICP = true;
 				} else {
 					next_map = true;
 					ROS_INFO( "Finished the waypoint path!" );
