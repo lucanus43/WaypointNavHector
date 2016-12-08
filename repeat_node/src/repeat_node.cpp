@@ -533,7 +533,9 @@ bool initVars(){
 	SCLLhat_icp = quat2dcm(QBL).t()*SCBB+SBLL;
 	QCLhat_icp = dcm2quat(TCB*quat2dcm(QBL));
 	SRLLhat_icp = quat2dcm(QBL).t()*SCBB+SBLL;
-	QRLhat_icp = dcm2quat(TCB*quat2dcm(QBL));	
+	QRLhat_icp = dcm2quat(TCB*quat2dcm(QBL));
+	
+	ROS_INFO_STREAM("SBLLhat_icp init: " << SBLLhat_icp);	
 	
 	// Since SRLLhat/QRLhat has been set, reset map to reflect this.
 	resetVO();
@@ -731,9 +733,10 @@ void waypointNav(){
 	ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
 	ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
 	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
-	if( fabs( SCLLhat.at<double>(0) -  SCLL_cmd.at<double>(0) ) < wp_radius && fabs( QCLhat.at<double>(0) -  QCL_cmd.at<double>(0) ) < wp_radius) {
-		if( fabs( SCLLhat.at<double>(1) - SCLL_cmd.at<double>(1))  < wp_radius && fabs( QCLhat.at<double>(1) -  QCL_cmd.at<double>(1) ) < wp_radius) {
-			if( fabs( SCLLhat.at<double>(2) - SCLL_cmd.at<double>(2) )  < wp_radius && fabs( QCLhat.at<double>(2) -  QCL_cmd.at<double>(2) ) < wp_radius) {
+	
+	if( fabs( SBLLhat.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBLhat.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
+		if( fabs( SBLLhat.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBLhat.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {
+			if( fabs( SBLLhat.at<double>(2) - SBLL_cmd.at<double>(2) )  < wp_radius && fabs( QBLhat.at<double>(2) -  QBL_cmd.at<double>(2) ) < wp_radius) {
 				//If there are more waypoints
 				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypointsCL.size() ) {
@@ -877,11 +880,13 @@ int main(int argc, char **argv){
 	
 	// Spin once for truth data to be obtained.
 	// Perform initialisation of variables.
-	ros::Rate rate(10.0);
+	ros::Rate rate(50.0);
 	ROS_INFO("Initialising variables.");
 	while(!exitRepeat && nh.ok() && !initVars()){
 		ros::spinOnce();
 		rate.sleep();
+		// Send current state to posePub (poseupdate topic)
+		posePub.publish(gmBLhat);
 	}
 	
 	// POST-INITIALISATION SUBSCRIPTIONS AND TIMERS
@@ -891,12 +896,13 @@ int main(int argc, char **argv){
 	// Subscribe to cloud_map topic
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
 	// Subscribe to estimated pose and not true pose
-	insPoseSub = nh.subscribe("/pose", 1, insCallBack);
+	insPoseSub = nh.subscribe("/pose", 100, insCallBack);
 	// Set a timer for the ICP
 	//icpFrequency = nh.createTimer( ros::Duration(5.0), performICP); // Automatically calls performICP() every 5.0 seconds
 	
 	// Loop
 	while (!exitRepeat && nh.ok()){
+		ros::spinOnce();
 		// Send current state to posePub (poseupdate topic)
 		posePub.publish(gmBLhat);
 		// Send current goal to pose client
@@ -911,8 +917,8 @@ int main(int argc, char **argv){
 			nextSubmap();
 		}
 		
-		// If VO has been lost for 10 frames or more, reset VO, or if new map is requested
-		if (next_map || (VOLossCounter > 10)){
+		// If VO has been lost for 1 frame or more, reset VO, or if new map is requested
+		if (next_map || (VOLossCounter > 1)){
 			resetVO();
 			// Send reset request
 			if (!resetOdometryClient.call(odomResetReq, odomResetResp)){
@@ -934,7 +940,7 @@ int main(int argc, char **argv){
 				clearMap = false;
 			}
 		}
-		ros::spinOnce();
+		
 		rate.sleep();
 	}
 	

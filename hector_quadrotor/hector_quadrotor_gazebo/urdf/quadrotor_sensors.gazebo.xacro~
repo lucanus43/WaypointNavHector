@@ -18,7 +18,7 @@
             <rateGaussianNoise>0.00 0.00 0.00</rateGaussianNoise>
           </plugin>
           
-          <!-- <plugin name="quadrotor_imu_sim" filename="libhector_gazebo_ros_imu.so">
+           <plugin name="quadrotor_imu_sim" filename="libhector_gazebo_ros_imu.so">
             <updateRate>100.0</updateRate>
             <bodyName>base_link</bodyName>
             <frameId>$(arg base_link_frame)</frameId>
@@ -29,7 +29,7 @@
             <accelGaussianNoise>0.35 0.35 0.3</accelGaussianNoise>
             <rateDrift>0.1 0.1 0.1</rateDrift>
             <rateGaussianNoise>0.05 0.05 0.015</rateGaussianNoise>
-          </plugin> -->
+          </plugin> 
 
           <plugin name="quadrotor_baro_sim" filename="libhector_gazebo_ros_baro.so">
             <updateRate>10.0</updateRate>
@@ -56,7 +56,7 @@
           </plugin>
 
         <plugin name="quadrotor_gps_sim" filename="libhector_gazebo_ros_gps.so">
-            <updateRate>4.0000000</updateRate>
+            <updateRate>0.00000005</updateRate>
             <bodyName>base_link</bodyName>
             <frameId>$(arg base_link_frame)</frameId>
             <topicName>fix</topicName>

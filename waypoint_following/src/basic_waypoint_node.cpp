@@ -7,6 +7,7 @@
 #include "ros/ros.h"
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
+#include "geometry_msgs/PoseWithCovarianceStamped.h"
 #include "hector_uav_msgs/TakeoffAction.h"
 #include "hector_uav_msgs/LandingAction.h"
 #include "hector_uav_msgs/PoseAction.h"
@@ -25,6 +26,7 @@ const double PI_F = 3.1415926535897931;
 
 // Pose Goal message
 geometry_msgs::PoseStamped current_goal;
+geometry_msgs::PoseWithCovarianceStamped truePos;
 std::vector<geometry_msgs::Pose> waypoints;
 int wp_counter = 0;
 double wp_radius = 0.01;
@@ -37,6 +39,24 @@ typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionCli
 
 // Callback function for the subscribe() function
 void position_cb( const geometry_msgs::PoseStamped::ConstPtr& current_pos ) {
+// Set truePos to current_pos
+truePos.pose.pose.position.x = current_pos->pose.position.x;
+truePos.pose.pose.position.y = current_pos->pose.position.y;
+truePos.pose.pose.position.z = current_pos->pose.position.z;
+truePos.pose.pose.orientation.x = current_goal.pose.orientation.x;
+truePos.pose.pose.orientation.y = current_goal.pose.orientation.y;
+truePos.pose.pose.orientation.z = current_goal.pose.orientation.z;
+truePos.pose.pose.orientation.w = current_goal.pose.orientation.w;
+// Set truePos covariances
+truePos.pose.covariance[0] = 0.5;
+truePos.pose.covariance[7] = 0.5;
+truePos.pose.covariance[14] = 0.5;
+truePos.pose.covariance[21] = 0.5;
+truePos.pose.covariance[28] = 0.5;
+truePos.pose.covariance[35] = 0.5;
+
+	
+// Waypoint nav
 ROS_INFO("Current position: [%f,%f,%f]", current_pos->pose.position.x, current_pos->pose.position.y, current_pos->pose.position.z);
 ROS_INFO("Current goal: [%f,%f,%f]", current_goal.pose.position.x, current_goal.pose.position.y, current_goal.pose.position.z);
 ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ): %f", fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ));
@@ -47,7 +67,7 @@ ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.
 		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {
 			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius  && fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius) {
 				//If there are more waypoints
-				wp_counter++;	//Move to the next waypoint
+				//wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypoints.size() ) {
 					current_goal.pose = waypoints.at(wp_counter);
 				} else {
@@ -129,13 +149,15 @@ int main(int argc, char **argv) {
 	hector_uav_msgs::LandingGoal landGoal;	
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
 	ros::Subscriber pos_sub;
+	ros::Publisher pos_pub;					// Publish truth data
 	hector_uav_msgs::TakeoffGoal goal;		// Goal (empty message) for TakeoffClient
 
 
 
 	//Publishers & Subscribers
 	// Publish to /position_goal, and Listen to /ground_truth_to_tf/pose (current pose)
-	pos_sub = nh.subscribe( "/pose", 1000, position_cb );
+	pos_sub = nh.subscribe( "ground_truth_to_tf/pose", 1000, position_cb );
+	pos_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 1);
 	// Generate the waypoints
 	generate_waypoints();
 		
@@ -168,6 +190,14 @@ int main(int argc, char **argv) {
 		current_goal.header.stamp = ros::Time::now();
 		current_goal.header.seq++;
 		current_goal.header.frame_id = "world";
+		
+		// truePos header
+		truePos.header.stamp = ros::Time::now();
+		truePos.header.seq++;
+		truePos.header.frame_id = "world";	
+		
+		// Broadcast truepos as a pose update (for repeat node)
+		pos_pub.publish(truePos);
 
 		// Send current goal to pose
 		poseGoal.target_pose = current_goal; 
