@@ -126,7 +126,6 @@ using namespace cv;
 	Mat SBLLhat_icp = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_icp = Mat::zeros(4,1,CV_64F);
 	Mat SORLhat_icp = Mat::zeros(3,1,CV_64F);
-	pcl::PointCloud<pcl::PointXYZ>::Ptr observedCloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	
 // State variables
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
@@ -148,9 +147,7 @@ typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionCli
 void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat);
 void resetMap();
 void resetVO();
-void performICP();
-
-
+	
 // ---------------------------- CALLBACK FUNCTIONS ---------------------------//	
 // -------------------------------------------------------------
 /*
@@ -164,11 +161,110 @@ Author: JDev 161125
 void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
 	// Local Variables
 	pcl::PCLPointCloud2 pcl_pc2;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr observedCloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
+	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
+	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+	Mat errTOR = Mat::zeros(3,3,CV_64F);
+	Mat errSORO = Mat::zeros(3,1,CV_64F);
+	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
+	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
+	
+	if (doICP){
+		doICP = false;
+		pcl_conversions::toPCL(*input,pcl_pc2);
+		pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
+		observedCloud->is_dense = false;
+		// Set transformedObsCloud to have the same data as observedCloud
+		*transformedObsCloud = *observedCloud;
+		
+		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
+		// Obtain SPOR_obs using
+		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
+		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
+		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
+		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
+		// Correct SRORhat, TROhat.
+		
+		// Apply SRORhat to observedCloud
+		for (size_t i = 0; i < observedCloud->points.size (); ++i){
+			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
+			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
+			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
+			
+			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
+			
+    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
+			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
+			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
+		}
+		
+		// Perform icp on transformedObsCloud
+		icp.setInputSource(transformedObsCloud);
+	 	icp.setInputTarget(submapCloud);
+	 	
+	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	icp.align(alignedCloud);
 
-	// Processing
-	pcl_conversions::toPCL(*input,pcl_pc2);
-	pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
-	observedCloud->is_dense = false;
+		// Obtain final transformation from ICP
+		// This is error in SORO and TRO
+		// If fitness score is < 0.1, no need to do ICP anymore.
+		if (icp.getFitnessScore() < 0.05){
+			
+			// Align to alignedCloud
+			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
+			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
+			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
+		
+		
+			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
+  			icp.getFitnessScore() << std::endl;
+			for (int i = 0; i < 3; i++){
+				for (int j = 0; j < 3; j++) {
+					errTOR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+				}
+				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
+			}
+			cout << "errTOR: " << errTOR << endl;
+			cout << "errSORO: " << errSORO << endl;
+		
+			// Calculate SORRhat_icp, TROhat_icp
+			TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
+			cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
+			cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
+			
+			SORRhat_icp = TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
+			cout << "SORRhat_icp: " << SORRhat_icp << endl;
+			cout << "SORRhat: " << -SRORhat << endl;
+			
+			// Calculate QRLhat_icp, SRLLhat_icp
+			QRLhat_icp = dcm2quat(TORhat_icp.t()*TOLhat);			// TOLhat <- submap
+			cout << "QRLhat_icp: " << QRLhat_icp << endl;
+			cout << "QRLhat: " << QRLhat << endl;
+			
+			SORLhat_icp = quat2dcm(QRLhat_icp).t()*SORRhat_icp;
+			cout << "SORLhat_icp: " << SORLhat_icp << endl;
+			cout << "SORLhat" << -quat2dcm(QRLhat).t()*SRORhat << endl;
+			
+			SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
+			cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
+			cout << "SRLLhat: " << SRLLhat << endl;
+			// Calculate SCLLhat_icp, TCLhat_icp
+			TCLhat_icp = quat2dcm(QCRhat)*quat2dcm(QRLhat_icp);			// QCRhat <- state update
+			SCLLhat_icp = TCLhat_icp.t()*SCRChat + SRLLhat_icp;	// SCRChat <- state update	
+			// Calculate SBLLhat_icp, TBLhat_icp
+			SBLLhat_icp = -TCLhat_icp.t()*TCB*SCBB+SCLLhat_icp;	// TCB/SCBB <- Known
+			QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
+			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
+			ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
+			// Perform state update
+			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+			//resetMap();
+		} else {
+			//resetMap();
+		}
+		
+	}
 }
 
 
@@ -290,123 +386,6 @@ void truePositionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	
 	
 // ---------------------------- PROCESS FUNCTIONS ---------------------------//	
-
-// -------------------------------------------------------------
-/*
-performICP -		performs ICP algorithm on observedCloud and submapCloud
-					
-					NOTE: Called from Main since placing it in callback lags system.
-
-Author: JDev 161125
-	
-*/
-// -------------------------------------------------------------
-void performICP(){
-	// Local variables
-	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
-	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
-	Mat errTOR = Mat::zeros(3,3,CV_64F);
-	Mat errSORO = Mat::zeros(3,1,CV_64F);
-	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
-	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
-	
-	// Process
-	// Set transformedObsCloud to have the same data as observedCloud
-	*transformedObsCloud = *observedCloud;
-	
-	if (doICP){
-
-		
-		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
-		// Obtain SPOR_obs using
-		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
-		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
-		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
-		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
-		// Correct SRORhat, TROhat.
-		
-		// Apply SRORhat to observedCloud
-		for (size_t i = 0; i < observedCloud->points.size (); ++i){
-			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
-			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
-			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
-			
-			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
-			
-    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
-			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
-			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
-		}
-		
-		// Perform icp on transformedObsCloud
-		icp.setInputSource(transformedObsCloud);
-	 	icp.setInputTarget(submapCloud);
-	 	
-	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
-	 	icp.align(alignedCloud);
-
-		// Obtain final transformation from ICP
-		// This is error in SORO and TRO
-		// If fitness score is < 0.1, no need to do ICP anymore.
-		if (icp.getFitnessScore() < 0.05){
-			doICP = false;
-			// Align to alignedCloud
-			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
-			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
-			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
-		
-		
-			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
-  			icp.getFitnessScore() << std::endl;
-			for (int i = 0; i < 3; i++){
-				for (int j = 0; j < 3; j++) {
-					errTOR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
-				}
-				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
-			}
-			cout << "errTOR: " << errTOR << endl;
-			cout << "errSORO: " << errSORO << endl;
-		
-			// Calculate SORRhat_icp, TROhat_icp
-			TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
-			cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
-			cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
-			
-			SORRhat_icp = TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
-			cout << "SORRhat_icp: " << SORRhat_icp << endl;
-			cout << "SORRhat: " << -SRORhat << endl;
-			
-			// Calculate QRLhat_icp, SRLLhat_icp
-			QRLhat_icp = dcm2quat(TORhat_icp.t()*TOLhat);			// TOLhat <- submap
-			cout << "QRLhat_icp: " << QRLhat_icp << endl;
-			cout << "QRLhat: " << QRLhat << endl;
-			
-			SORLhat_icp = quat2dcm(QRLhat_icp).t()*SORRhat_icp;
-			cout << "SORLhat_icp: " << SORLhat_icp << endl;
-			cout << "SORLhat" << -quat2dcm(QRLhat).t()*SRORhat << endl;
-			
-			SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
-			cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
-			cout << "SRLLhat: " << SRLLhat << endl;
-			// Calculate SCLLhat_icp, TCLhat_icp
-			TCLhat_icp = quat2dcm(QCRhat)*quat2dcm(QRLhat_icp);			// QCRhat <- state update
-			SCLLhat_icp = TCLhat_icp.t()*SCRChat + SRLLhat_icp;	// SCRChat <- state update	
-			// Calculate SBLLhat_icp, TBLhat_icp
-			SBLLhat_icp = -TCLhat_icp.t()*TCB*SCBB+SCLLhat_icp;	// TCB/SCBB <- Known
-			QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
-			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
-			ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
-			// Perform state update
-			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
-			//resetMap();
-		} else {
-			//resetMap();
-		}
-		
-	}
-}
-
 
 // -------------------------------------------------------------
 /*
@@ -867,9 +846,6 @@ int main(int argc, char **argv){
 	ros::init(argc, argv, "repeat_node");
 	// Create node handle
 	ros::NodeHandle nh;
-	// HACK: create second node handle for cloud localisation
-	ros::NodeHandle nhLoc;
-	//
 
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
 	ros::Time begin = ros::Time::now();
@@ -916,7 +892,7 @@ int main(int argc, char **argv){
 	// Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, voCallBack);
 	// Subscribe to cloud_map topic
-	cloudSub = nhLoc.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
 	// Subscribe to estimated pose and not true pose
 	insPoseSub = nh.subscribe("/pose", 1, insCallBack);
 	// Set a timer for the ICP
@@ -930,9 +906,6 @@ int main(int argc, char **argv){
 		poseGoal.target_pose = gmBL_cmd; 
 		PAC.sendGoal(poseGoal);
 		waypointNav();
-		
-		// Perform ICP
-		performICP();
 		
 		// Proceed to next map if next map is requested.
 		if (next_map){

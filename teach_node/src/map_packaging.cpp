@@ -42,7 +42,7 @@ void packageMap(vector<Mat> vecSCOL, vector<Mat> vecTCL, Mat SOLL, Mat QOL, stri
 	
 	// Save SOLL and QOL
 	outputFile << "SOLL: " << SOLL.at<double>(0) << " " << SOLL.at<double>(1) << " " << SOLL.at<double>(2) << endl;
-		outputFile << "QOLhat: " << QOL.at<double>(0) << " " << QOL.at<double>(1) << " " << QOL.at<double>(2) << QOL.at<double>(3) << endl;
+		outputFile << "QOLhat: " << QOL.at<double>(0) << " " << QOL.at<double>(1) << " " << QOL.at<double>(2) << " " << QOL.at<double>(3) << endl;
 	// Loop
 	// for each pose (SCOL/TCL) stored in vecSCOL/vecTCL: 
 	for (int i = 0; i < vecSCOL.size(); i++){

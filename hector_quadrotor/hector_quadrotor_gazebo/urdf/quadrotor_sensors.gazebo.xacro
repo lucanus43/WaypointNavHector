@@ -56,7 +56,7 @@
           </plugin>
 
         <plugin name="quadrotor_gps_sim" filename="libhector_gazebo_ros_gps.so">
-            <updateRate>4.0000000</updateRate>
+            <updateRate>0.00000001</updateRate>
             <bodyName>base_link</bodyName>
             <frameId>$(arg base_link_frame)</frameId>
             <topicName>fix</topicName>

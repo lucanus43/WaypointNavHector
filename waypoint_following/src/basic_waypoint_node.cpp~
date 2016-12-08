@@ -67,7 +67,7 @@ ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.
 		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {
 			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius  && fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius) {
 				//If there are more waypoints
-				//wp_counter++;	//Move to the next waypoint
+				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypoints.size() ) {
 					current_goal.pose = waypoints.at(wp_counter);
 				} else {
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 100 );
+	ros::Rate loop_rate( 10 );	
 
 
 	// Local variables
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
 		truePos.header.frame_id = "world";	
 		
 		// Broadcast truepos as a pose update (for repeat node)
-		pos_pub.publish(truePos);
+		//pos_pub.publish(truePos);
 
 		// Send current goal to pose
 		poseGoal.target_pose = current_goal; 
