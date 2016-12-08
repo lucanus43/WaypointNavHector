@@ -53,6 +53,176 @@ Date: 161125
 #include "cvUtility.h"
 #include "map_packaging.h"
 
+using namespace cv;
+
+// ---------------------- GLOBAL VARIABLES -----------------------------//
+
+// Main variables
+	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
+	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat QROhat = Mat::zeros(3,1,CV_64F);
+	Mat errTOR = Mat::zeros(3,3,CV_64F);
+	Mat errSORO = Mat::zeros(3,1,CV_64F);
+
+// ICP variables
+	Mat TORhat_icp = Mat::zeros(3,3,CV_64F);
+	Mat SORRhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QRLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SRLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat TCLhat_icp = Mat::zeros(3,3,CV_64F);
+	Mat SCLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QBLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SBLLhat_icp = Mat::zeros(3,1,CV_64F);
+	Mat QCLhat_icp = Mat::zeros(4,1,CV_64F);
+	Mat SORLhat_icp = Mat::zeros(3,1,CV_64F);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr observedCloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
+	
+
+
+// ---------------------------- CALLBACK FUNCTIONS ---------------------------//
+
+
+// -------------------------------------------------------------
+/*
+cloudAlignmentCallBack - Callback function received transform from
+						 R frame to O frame.
+				
+Author: JDev 161208
+	
+*/
+// -------------------------------------------------------------
+void cloudAlignmentCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmRO ){
+	// Local variables
+	// ..
+	
+	// Process
+	SRORhat.at<double>(0) = gmRO->pose.position.x;
+	SRORhat.at<double>(1) = gmRO->pose.position.y;
+	SRORhat.at<double>(2) = gmRO->pose.position.z;
+	QROhat.at<double>(0) = gmRO->pose.orientation.x;
+	QROhat.at<double>(1) = gmRO->pose.orientation.y;
+	QROhat.at<double>(2) = gmRO->pose.orientation.z;
+	QROhat.at<double>(3) = gmRO->pose.orientation.w;
+}
+
+// -------------------------------------------------------------
+/*
+submapCloudCallBack - Callback function for pointcloud subscriber
+				Derived from: http://answers.ros.org/question/136916/conversion-from-sensor_msgspointcloud2-to-pclpointcloudt/
+
+Author: JDev 161208
+	
+*/
+// -------------------------------------------------------------
+void submapCloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
+	// Local Variables
+	pcl::PCLPointCloud2 pcl_pc2;
+
+	// Processing
+	pcl_conversions::toPCL(*input,pcl_pc2);
+	pcl::fromPCLPointCloud2(pcl_pc2,*submapCloud);
+	submapCloud->is_dense = false;
+}
+
+
+// -------------------------------------------------------------
+/*
+cloudCallBack - Callback function for pointcloud subscriber
+				Derived from: http://answers.ros.org/question/136916/conversion-from-sensor_msgspointcloud2-to-pclpointcloudt/
+
+Author: JDev 161208
+	
+*/
+// -------------------------------------------------------------
+void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
+	// Local Variables
+	pcl::PCLPointCloud2 pcl_pc2;
+
+	// Processing
+	pcl_conversions::toPCL(*input,pcl_pc2);
+	pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
+	observedCloud->is_dense = false;
+}
+
+
+// ----------------------- PROCESS FUNCTIONS ---------------------- //
+// -------------------------------------------------------------
+/*
+performICP -		performs ICP algorithm on observedCloud and submapCloud
+					
+					NOTE: Called from Main since placing it in callback lags system.
+
+Author: JDev 161208
+	
+*/
+// -------------------------------------------------------------
+void performICP(){
+	// Local variables
+	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
+	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
+	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
+	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
+	
+	// Process
+	// Set transformedObsCloud to have the same data as observedCloud
+	*transformedObsCloud = *observedCloud;
+	
+	if (doICP){
+		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
+		// Obtain SPOR_obs using
+		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
+		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
+		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
+		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
+		// Correct SRORhat, TROhat.
+		
+		// Apply SRORhat to observedCloud
+		for (size_t i = 0; i < observedCloud->points.size (); ++i){
+			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
+			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
+			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
+			
+			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
+			
+    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
+			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
+			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
+		}
+		
+		// Perform icp on transformedObsCloud
+		icp.setInputSource(transformedObsCloud);
+	 	icp.setInputTarget(submapCloud);
+	 	
+	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	icp.align(alignedCloud);
+
+		// Obtain final transformation from ICP
+		// This is error in SORO and TRO
+		// If fitness score is < 0.1, no need to do ICP anymore.
+		if (icp.getFitnessScore() < 0.05){
+			doICP = false;
+			// Align to alignedCloud
+			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
+			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
+			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
+		
+		
+			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
+  			icp.getFitnessScore() << std::endl;
+			for (int i = 0; i < 3; i++){
+				for (int j = 0; j < 3; j++) {
+					errTOR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+				}
+				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
+			}
+			cout << "errTOR: " << errTOR << endl;
+			cout << "errSORO: " << errSORO << endl;
+		}
+	}
+}
+
+
 // -------------------------------------------------------------
 /*
 main -	Main execution loop
@@ -79,8 +249,8 @@ int main(int argc, char **argv){
 	
 	// main loop
 	while (nh.ok()){
-		performICP();
 		ros::spinOnce();
+		performICP();
 	}
 	
 	
