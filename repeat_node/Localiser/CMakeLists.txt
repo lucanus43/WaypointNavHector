@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(repeat_node)
+project(localisation_node)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -144,19 +144,11 @@ include_directories(
 # add_dependencies(image_transport_node ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 ## Declare a C++ executable
- add_executable(repeat_node src/repeat_node.cpp)
  add_executable(localisation_node src/localisation_node.cpp)
 
 
 ## Specify libraries to link a library or executable target against
- target_link_libraries(repeat_node
-   ${catkin_LIBRARIES}
-   ${OpenCV_LIBRARIES}
-   #cvUtility
-   #map_packaging
- )
- 
-  target_link_libraries(localisation_node
+ target_link_libraries(localisation_node
    ${catkin_LIBRARIES}
    ${OpenCV_LIBRARIES}
    #cvUtility

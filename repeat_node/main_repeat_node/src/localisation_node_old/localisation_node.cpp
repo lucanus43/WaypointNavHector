@@ -60,9 +60,11 @@ using namespace cv;
 // Main variables
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat errQOR = Mat::zeros(4,1,CV_64F);
 	Mat QROhat = Mat::zeros(3,1,CV_64F);
 	Mat errTOR = Mat::zeros(3,3,CV_64F);
 	Mat errSORO = Mat::zeros(3,1,CV_64F);
+	geometry_msgs::PoseStamped gmerrOR;
 
 // ICP variables
 	Mat TORhat_icp = Mat::zeros(3,3,CV_64F);
@@ -168,7 +170,7 @@ void performICP(){
 	// Set transformedObsCloud to have the same data as observedCloud
 	*transformedObsCloud = *observedCloud;
 	
-	if (doICP){
+	if (1) { //doICP){
 		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
 		// Obtain SPOR_obs using
 		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
@@ -201,7 +203,7 @@ void performICP(){
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
 		if (icp.getFitnessScore() < 0.05){
-			doICP = false;
+			//doICP = false;
 			// Align to alignedCloud
 			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
 			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
@@ -219,6 +221,19 @@ void performICP(){
 			cout << "errTOR: " << errTOR << endl;
 			cout << "errSORO: " << errSORO << endl;
 		}
+		// Convert errTOR and errSORO to gmerrOR for broadcast
+		errQOR = dcm2quat(errTOR);
+		
+		gmerrOR.pose.position.x = errSORO.at<double>(0);
+		gmerrOR.pose.position.y = errSORO.at<double>(1);
+		gmerrOR.pose.position.z = errSORO.at<double>(2);
+		gmerrOR.pose.orientation.x = errQOR.at<double>(0);
+		gmerrOR.pose.orientation.y = errQOR.at<double>(1);
+		gmerrOR.pose.orientation.z = errQOR.at<double>(2);
+		gmerrOR.pose.orientation.w = errQOR.at<double>(3);
+		gmerrOR.header.stamp = ros::Time::now();
+		gmerrOR.header.seq++;
+		gmerrOR.header.frame_id = "R-frame";
 	}
 }
 
@@ -239,6 +254,8 @@ int main(int argc, char **argv){
 
 	// Subscribers and publishers
 	ros::Subscriber cloudSub;	// Point cloud subscriber
+	ros::Subscriber submapCloudSub;	// Submap cloud subscriber
+	ros::Subscriber cloudAlignEstSub; 	// Subscriber to SRORhat/QROhat
 	ros::Publisher localisationUpdate;	// Publisher to send update from localisation node
 	
 	// Initialisation
@@ -251,6 +268,9 @@ int main(int argc, char **argv){
 	while (nh.ok()){
 		ros::spinOnce();
 		performICP();
+		// Broadcast error terms
+		// TODO: Will this publish old data? Perhaps if statement could help here.
+		localisationUpdate.publish(gmerrOR);
 	}
 	
 	

@@ -67,11 +67,11 @@ ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.
 		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {
 			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius  && fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius) {
 				//If there are more waypoints
-				//wp_counter++;	//Move to the next waypoint
+				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypoints.size() ) {
 					current_goal.pose = waypoints.at(wp_counter);
 				} else {
-					quit_loop = true;
+					//quit_loop = true;
 					ROS_INFO( "Finished the waypoint path!" );
 				}
 			}
@@ -108,10 +108,10 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = 1.0;	//[1.0, 0, 5.0]
+	tmp_wp.position.x = 0.2;	//[1.0, 0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
-	//Waypoint 3
+	/*//Waypoint 3
 	tmp_wp.position.x = 2.0;	//[2.0, 0.0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
@@ -132,7 +132,7 @@ void generate_waypoints() {
 	//Waypoint 7
 	tmp_wp.position.x = 0.0;	//[0, 0, 5.0]
 	//tmp_wp.position.y = 0.0;
-	waypoints.push_back(tmp_wp);
+	waypoints.push_back(tmp_wp);*/
 	
 	
 }
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 10 );	
+	ros::Rate loop_rate( 50 );	
 
 
 	// Local variables

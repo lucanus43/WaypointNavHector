@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+
+<launch>
+  	
+  <node pkg="repeat_node" type="repeat_node" name="repeat_node" output="screen">
+  	<param name="map_location" value="$(find teach_node)/maps/"/>
+  </node>
+  	
+   <node pkg="localisation_node" type="localisation_node" name="localisation_node" output="screen">
+  </node>
+  	
+
+</launch>

@@ -71,9 +71,11 @@ using namespace cv;
 	geometry_msgs::PoseStamped gmBL_cmd;
 	geometry_msgs::PoseWithCovarianceStamped gmBLhat;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
-	ros::Timer icpFrequency;
 	int mapCounter = 0;
 	bool exitRepeat = false;
+	sensor_msgs::PointCloud2 submapCloudPC2;
+	geometry_msgs::PoseStamped gmROhat;
+	std::string map_location;
 	
 // Truth variables
 	Mat QCB = Mat::zeros(4,1,CV_64F);
@@ -126,7 +128,6 @@ using namespace cv;
 	Mat SBLLhat_icp = Mat::zeros(3,1,CV_64F);
 	Mat QCLhat_icp = Mat::zeros(4,1,CV_64F);
 	Mat SORLhat_icp = Mat::zeros(3,1,CV_64F);
-	pcl::PointCloud<pcl::PointXYZ>::Ptr observedCloud(new pcl::PointCloud<pcl::PointXYZ>); // temp_cloud is in PointXYZ form
 	
 // State variables
 	Mat SCRChat = Mat::zeros(3,1,CV_64F);
@@ -148,29 +149,71 @@ typedef actionlib::SimpleActionClient<hector_uav_msgs::PoseAction> PoseActionCli
 void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat);
 void resetMap();
 void resetVO();
-void performICP();
 
 
 // ---------------------------- CALLBACK FUNCTIONS ---------------------------//	
+
 // -------------------------------------------------------------
 /*
-cloudCallBack - Callback function for pointcloud subscriber
-				Derived from: http://answers.ros.org/question/136916/conversion-from-sensor_msgspointcloud2-to-pclpointcloudt/
+localisationUpdateCallBack - Obtains and processes result from localisation update (localisation_node)
 
-Author: JDev 161125
+Author: JDev 161209
 	
 */
 // -------------------------------------------------------------
-void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& input) {
-	// Local Variables
-	pcl::PCLPointCloud2 pcl_pc2;
-
-	// Processing
-	pcl_conversions::toPCL(*input,pcl_pc2);
-	pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
-	observedCloud->is_dense = false;
+void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmerrOR){
+	// Local variables
+	Mat errSORO = Mat::zeros(3,1,CV_64F);
+	Mat errQOR = Mat::zeros(4,1,CV_64F);
+	Mat errTOR = Mat::zeros(3,3,CV_64F);
+	
+	// Read in gmerrOR to errSORO and errTOR;
+	errSORO.at<double>(0) = gmerrOR->pose.position.x;
+	errSORO.at<double>(1) = gmerrOR->pose.position.y;
+	errSORO.at<double>(2) = gmerrOR->pose.position.z;
+	errQOR.at<double>(0) = gmerrOR->pose.orientation.x;
+	errQOR.at<double>(1) = gmerrOR->pose.orientation.y;
+	errQOR.at<double>(2) = gmerrOR->pose.orientation.z;
+	errQOR.at<double>(3) = gmerrOR->pose.orientation.w;
+	
+	// Process
+	if (doICP){
+		// Convert errQOR to errTOR
+		errTOR = quat2dcm(errQOR);
+		// Calculate SORRhat_icp, TROhat_icp
+		TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
+		cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
+		cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
+		
+		SORRhat_icp = TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
+		cout << "SORRhat_icp: " << SORRhat_icp << endl;
+		cout << "SORRhat: " << -SRORhat << endl;
+		
+		// Calculate QRLhat_icp, SRLLhat_icp
+		QRLhat_icp = dcm2quat(TORhat_icp.t()*TOLhat);			// TOLhat <- submap
+		cout << "QRLhat_icp: " << QRLhat_icp << endl;
+		cout << "QRLhat: " << QRLhat << endl;
+		
+		SORLhat_icp = quat2dcm(QRLhat_icp).t()*SORRhat_icp;
+		cout << "SORLhat_icp: " << SORLhat_icp << endl;
+		cout << "SORLhat" << -quat2dcm(QRLhat).t()*SRORhat << endl;
+		
+		SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
+		cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
+		cout << "SRLLhat: " << SRLLhat << endl;
+		// Calculate SCLLhat_icp, TCLhat_icp
+		TCLhat_icp = quat2dcm(QCRhat)*quat2dcm(QRLhat_icp);			// QCRhat <- state update
+		SCLLhat_icp = TCLhat_icp.t()*SCRChat + SRLLhat_icp;	// SCRChat <- state update	
+		// Calculate SBLLhat_icp, TBLhat_icp
+		SBLLhat_icp = -TCLhat_icp.t()*TCB*SCBB+SCLLhat_icp;	// TCB/SCBB <- Known
+		QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
+		ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
+		ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
+		// Perform state update
+		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+		//resetMap();
+	}
 }
-
 
 
 // -------------------------------------------------------------
@@ -291,121 +334,6 @@ void truePositionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	
 // ---------------------------- PROCESS FUNCTIONS ---------------------------//	
 
-// -------------------------------------------------------------
-/*
-performICP -		performs ICP algorithm on observedCloud and submapCloud
-					
-					NOTE: Called from Main since placing it in callback lags system.
-
-Author: JDev 161125
-	
-*/
-// -------------------------------------------------------------
-void performICP(){
-	// Local variables
-	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
-	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
-	Mat errTOR = Mat::zeros(3,3,CV_64F);
-	Mat errSORO = Mat::zeros(3,1,CV_64F);
-	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
-	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
-	
-	// Process
-	// Set transformedObsCloud to have the same data as observedCloud
-	*transformedObsCloud = *observedCloud;
-	
-	if (doICP){
-
-		
-		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
-		// Obtain SPOR_obs using
-		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
-		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
-		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
-		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
-		// Correct SRORhat, TROhat.
-		
-		// Apply SRORhat to observedCloud
-		for (size_t i = 0; i < observedCloud->points.size (); ++i){
-			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
-			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
-			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
-			
-			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
-			
-    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
-			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
-			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
-		}
-		
-		// Perform icp on transformedObsCloud
-		icp.setInputSource(transformedObsCloud);
-	 	icp.setInputTarget(submapCloud);
-	 	
-	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
-	 	icp.align(alignedCloud);
-
-		// Obtain final transformation from ICP
-		// This is error in SORO and TRO
-		// If fitness score is < 0.1, no need to do ICP anymore.
-		if (icp.getFitnessScore() < 0.05){
-			doICP = false;
-			// Align to alignedCloud
-			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
-			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
-			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
-		
-		
-			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
-  			icp.getFitnessScore() << std::endl;
-			for (int i = 0; i < 3; i++){
-				for (int j = 0; j < 3; j++) {
-					errTOR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
-				}
-				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
-			}
-			cout << "errTOR: " << errTOR << endl;
-			cout << "errSORO: " << errSORO << endl;
-		
-			// Calculate SORRhat_icp, TROhat_icp
-			TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
-			cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
-			cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
-			
-			SORRhat_icp = TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
-			cout << "SORRhat_icp: " << SORRhat_icp << endl;
-			cout << "SORRhat: " << -SRORhat << endl;
-			
-			// Calculate QRLhat_icp, SRLLhat_icp
-			QRLhat_icp = dcm2quat(TORhat_icp.t()*TOLhat);			// TOLhat <- submap
-			cout << "QRLhat_icp: " << QRLhat_icp << endl;
-			cout << "QRLhat: " << QRLhat << endl;
-			
-			SORLhat_icp = quat2dcm(QRLhat_icp).t()*SORRhat_icp;
-			cout << "SORLhat_icp: " << SORLhat_icp << endl;
-			cout << "SORLhat" << -quat2dcm(QRLhat).t()*SRORhat << endl;
-			
-			SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
-			cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
-			cout << "SRLLhat: " << SRLLhat << endl;
-			// Calculate SCLLhat_icp, TCLhat_icp
-			TCLhat_icp = quat2dcm(QCRhat)*quat2dcm(QRLhat_icp);			// QCRhat <- state update
-			SCLLhat_icp = TCLhat_icp.t()*SCRChat + SRLLhat_icp;	// SCRChat <- state update	
-			// Calculate SBLLhat_icp, TBLhat_icp
-			SBLLhat_icp = -TCLhat_icp.t()*TCB*SCBB+SCLLhat_icp;	// TCB/SCBB <- Known
-			QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
-			ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
-			ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
-			// Perform state update
-			updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
-			//resetMap();
-		} else {
-			//resetMap();
-		}
-		
-	}
-}
 
 
 // -------------------------------------------------------------
@@ -498,6 +426,9 @@ void loadSubmapPCD(string PCDFileName){
 	  }
 	// Set submapCloud params
 	submapCloud->is_dense = false;
+	
+	// Convert submapCloud to PointCloud2 format for broadcast
+	pcl::toROSMsg(*submapCloud, submapCloudPC2);
 }
 
 // -------------------------------------------------------------
@@ -633,7 +564,9 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
 	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
+	ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 	//ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
+	
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
 	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
@@ -655,6 +588,20 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	gmBLhat.header.seq++;
 	gmBLhat.header.frame_id = "/nav";	
 	
+	// gmROhat for publishing
+	gmROhat.pose.position.x = SRORhat.at<double>(0);
+	gmROhat.pose.position.y = SRORhat.at<double>(1);
+	gmROhat.pose.position.z = SRORhat.at<double>(2);
+	gmROhat.pose.orientation.x = QROhat.at<double>(0);
+	gmROhat.pose.orientation.y = QROhat.at<double>(1);
+	gmROhat.pose.orientation.z = QROhat.at<double>(2);
+	gmROhat.pose.orientation.w = QROhat.at<double>(3);
+	
+	// gmBLhat header
+	gmROhat.header.stamp = ros::Time::now();
+	gmROhat.header.seq++;
+	gmROhat.header.frame_id = "R-frame";	
+
 }
 
 
@@ -758,38 +705,40 @@ void waypointNav(){
 	if( fabs( SBLLhat.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBLhat.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SBLLhat.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBLhat.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {
 			if( fabs( SBLLhat.at<double>(2) - SBLL_cmd.at<double>(2) )  < wp_radius && fabs( QBLhat.at<double>(2) -  QBL_cmd.at<double>(2) ) < wp_radius) {
-				//If there are more waypoints
-				wp_counter++;	//Move to the next waypoint
-				if( wp_counter < waypointsCL.size() ) {
-					ROS_INFO("Satisfied waypoint condition.");
-					SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
-					SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
-					SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
-					QCL_cmd.at<double>(0) = waypointsCL.at(wp_counter).orientation.x;
-					QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
-					QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
-					QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
-					SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
-					QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
-					// gmBL_cmd
-					gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
-					gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
-					gmBL_cmd.pose.position.z = SBLL_cmd.at<double>(2);
-					gmBL_cmd.pose.orientation.x = QBL_cmd.at<double>(0);
-					gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
-					gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
-					gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
-					// gmBL_cmd Header
-					gmBL_cmd.header.stamp = ros::Time::now();
-					gmBL_cmd.header.seq++;
-					gmBL_cmd.header.frame_id = "world";
-					// Make UAV perform a localisation update before moving to next waypoint
-					//doICP = true;
-				} else {
-					next_map = true;
-					ROS_INFO( "Finished the waypoint path!" );
-					// DEBUG TODO: get rid of
-					//ros::shutdown();
+				if ((VOLossCounter <= 0)){
+					//If there are more waypoints
+					wp_counter++;	//Move to the next waypoint
+					if( wp_counter < waypointsCL.size() ) {
+						ROS_INFO("Satisfied waypoint condition.");
+						SCLL_cmd.at<double>(0) = waypointsCL.at(wp_counter).position.x;
+						SCLL_cmd.at<double>(1) = waypointsCL.at(wp_counter).position.y;
+						SCLL_cmd.at<double>(2) = waypointsCL.at(wp_counter).position.z;
+						QCL_cmd.at<double>(0) = waypointsCL.at(wp_counter).orientation.x;
+						QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
+						QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
+						QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+						SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
+						QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
+						// gmBL_cmd
+						gmBL_cmd.pose.position.x = SBLL_cmd.at<double>(0);
+						gmBL_cmd.pose.position.y = SBLL_cmd.at<double>(1);
+						gmBL_cmd.pose.position.z = SBLL_cmd.at<double>(2);
+						gmBL_cmd.pose.orientation.x = QBL_cmd.at<double>(0);
+						gmBL_cmd.pose.orientation.y = QBL_cmd.at<double>(1);
+						gmBL_cmd.pose.orientation.z = QBL_cmd.at<double>(2);
+						gmBL_cmd.pose.orientation.w = QBL_cmd.at<double>(3);
+						// gmBL_cmd Header
+						gmBL_cmd.header.stamp = ros::Time::now();
+						gmBL_cmd.header.seq++;
+						gmBL_cmd.header.frame_id = "world";
+						// Make UAV perform a localisation update before moving to next waypoint
+						//doICP = true;
+					} else {
+						next_map = true;
+						ROS_INFO( "Finished the waypoint path!" );
+						// DEBUG TODO: get rid of
+						//ros::shutdown();
+					}
 				}
 			}
 		}
@@ -863,21 +812,19 @@ Author: JDev 161125
 */
 // -------------------------------------------------------------
 int main(int argc, char **argv){
-// Initialise ROS
+	// Initialise ROS
 	ros::init(argc, argv, "repeat_node");
 	// Create node handle
 	ros::NodeHandle nh;
-	// HACK: create second node handle for cloud localisation
-	ros::NodeHandle nhLoc;
-	//
 
 	// Local  ROS elements (subscribers, listeners, publishers, etc.)
-	ros::Time begin = ros::Time::now();
 	ros::Subscriber odomSub;	// Visual Odometry (VO) subscriber
-	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber truePoseSub;
 	ros::Subscriber insPoseSub;
+	ros::Subscriber localisationUpdateSub;
 	ros::Publisher posePub;
+	ros::Publisher submapCloudPub;
+	ros::Publisher cloudAlignmentPub;
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
 	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");	// Reset to specified SCRChat
@@ -887,24 +834,35 @@ int main(int argc, char **argv){
 	// Local variables
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
 
-	// Initialisation
-	// Subscribe to positionCallBack
-	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 10, truePositionCallBack);
-
+	// Set publishers
 	// Publish to poseupdate
 	posePub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 1);
+	
+	// Publish to repeat_node/submapCloud
+	submapCloudPub = nh.advertise<sensor_msgs::PointCloud2>("repeat_node/submapCloud", 1);
+	
+	// Post-init Publish to repeat_node/cloudAlignment
+	cloudAlignmentPub = nh.advertise<geometry_msgs::PoseStamped>("repeat_node/cloudAlignment", 1);
+
+
+	// INITIALISATION OF VARIABLES
+	// Subscribe to positionCallBack
+	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 10, truePositionCallBack);
 
 	// Initialise the PoseActionClient
 	PAC.waitForServer();
 	ROS_INFO("Pose client initialised.");
 	
+	// Obtain map location
+	nh.getParam("/repeat_node/map_location", map_location);
+	
 	// Load first submap
-	generateWaypoints("pose_0.txt");			// Sets SOLL, TOL
-	loadSubmapPCD("submap_0.pcd");
+	generateWaypoints(map_location + "pose_0.txt");			// Sets SOLL, TOL
+	loadSubmapPCD(map_location + "submap_0.pcd");
 	
 	// Spin once for truth data to be obtained.
 	// Perform initialisation of variables.
-	ros::Rate rate(10.0);
+	ros::Rate rate(20.0);
 	ROS_INFO("Initialising variables.");
 	while(!exitRepeat && nh.ok() && !initVars()){
 		ros::spinOnce();
@@ -912,17 +870,15 @@ int main(int argc, char **argv){
 	}
 	
 	// POST-INITIALISATION SUBSCRIPTIONS AND TIMERS
-	// Now odom, cloud and pose topics can be subscribed to
-	// Subscribe to odom topic
+	// Now odom, and pose topics can be subscribed to
+	// Post-init Subscribe to odom topic
 	odomSub = nh.subscribe("/rtabmap/odom", 1, voCallBack);
-	// Subscribe to cloud_map topic
-	cloudSub = nhLoc.subscribe("rtabmap/cloud_map", 100, cloudCallBack);
-	// Subscribe to estimated pose and not true pose
+	// Post-init Subscribe to estimated pose and not true pose
 	insPoseSub = nh.subscribe("/pose", 1, insCallBack);
-	// Set a timer for the ICP
-	//icpFrequency = nh.createTimer( ros::Duration(5.0), performICP); // Automatically calls performICP() every 5.0 seconds
+	// Post-init subscribe to localisation update
+	localisationUpdateSub = nh.subscribe("repeat_node/locPose", 1, localisationUpdateCallBack);
 	
-	// Loop
+	// MAIN LOOP
 	while (!exitRepeat && nh.ok()){
 		// Send current state to posePub (poseupdate topic)
 		posePub.publish(gmBLhat);
@@ -931,8 +887,11 @@ int main(int argc, char **argv){
 		PAC.sendGoal(poseGoal);
 		waypointNav();
 		
-		// Perform ICP
-		performICP();
+		// Broadcast submap cloud
+		submapCloudPub.publish(submapCloudPC2);
+		
+		// Broadcast estimated SORR/QOR: gmROhat
+		cloudAlignmentPub.publish(gmROhat);
 		
 		// Proceed to next map if next map is requested.
 		if (next_map){
@@ -942,8 +901,9 @@ int main(int argc, char **argv){
 		}
 		
 		// If VO has been lost for 1 frames or more, reset VO, or if new map is requested
-		if (next_map || (VOLossCounter > 1)){
+		if (next_map || (VOLossCounter > 0)){
 			resetVO();
+			resetMap();
 			// Send reset request
 			if (!resetOdometryClient.call(odomResetReq, odomResetResp)){
 				ROS_INFO("[repeat_node] Failed to reset odometry.");

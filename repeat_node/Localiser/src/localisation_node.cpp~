@@ -60,10 +60,15 @@ using namespace cv;
 // Main variables
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat errQOR = Mat::zeros(4,1,CV_64F);
 	Mat QROhat = Mat::zeros(3,1,CV_64F);
 	Mat errTOR = Mat::zeros(3,3,CV_64F);
 	Mat errSORO = Mat::zeros(3,1,CV_64F);
-
+	geometry_msgs::PoseStamped gmerrOR;
+	bool doICP = false;
+	std::string map_location;
+	bool publishLoc = false;
+	
 // ICP variables
 	Mat TORhat_icp = Mat::zeros(3,3,CV_64F);
 	Mat SORRhat_icp = Mat::zeros(3,1,CV_64F);
@@ -142,6 +147,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	pcl_conversions::toPCL(*input,pcl_pc2);
 	pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
 	observedCloud->is_dense = false;
+	doICP = true;
 }
 
 
@@ -200,12 +206,13 @@ void performICP(){
 		// Obtain final transformation from ICP
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
-		if (icp.getFitnessScore() < 0.05){
+		if (icp.getFitnessScore() < 0.01){
 			doICP = false;
+			publishLoc = true;
 			// Align to alignedCloud
-			pcl::io::savePCDFileASCII ("obsCloud.pcd", *observedCloud);
-			pcl::io::savePCDFileASCII ("transformedObs.pcd", *transformedObsCloud);
-			pcl::io::savePCDFileASCII ("aligned.pcd", alignedCloud);
+			pcl::io::savePCDFileASCII (map_location + "obsCloud.pcd", *observedCloud);
+			pcl::io::savePCDFileASCII (map_location + "transformedObs.pcd", *transformedObsCloud);
+			pcl::io::savePCDFileASCII (map_location + "aligned.pcd", alignedCloud);
 		
 		
 			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
@@ -219,6 +226,19 @@ void performICP(){
 			cout << "errTOR: " << errTOR << endl;
 			cout << "errSORO: " << errSORO << endl;
 		}
+		// Convert errTOR and errSORO to gmerrOR for broadcast
+		errQOR = dcm2quat(errTOR);
+		
+		gmerrOR.pose.position.x = errSORO.at<double>(0);
+		gmerrOR.pose.position.y = errSORO.at<double>(1);
+		gmerrOR.pose.position.z = errSORO.at<double>(2);
+		gmerrOR.pose.orientation.x = errQOR.at<double>(0);
+		gmerrOR.pose.orientation.y = errQOR.at<double>(1);
+		gmerrOR.pose.orientation.z = errQOR.at<double>(2);
+		gmerrOR.pose.orientation.w = errQOR.at<double>(3);
+		gmerrOR.header.stamp = ros::Time::now();
+		gmerrOR.header.seq++;
+		gmerrOR.header.frame_id = "R-frame";
 	}
 }
 
@@ -239,6 +259,8 @@ int main(int argc, char **argv){
 
 	// Subscribers and publishers
 	ros::Subscriber cloudSub;	// Point cloud subscriber
+	ros::Subscriber submapCloudSub;	// Submap cloud subscriber
+	ros::Subscriber cloudAlignEstSub; 	// Subscriber to SRORhat/QROhat
 	ros::Publisher localisationUpdate;	// Publisher to send update from localisation node
 	
 	// Initialisation
@@ -246,11 +268,21 @@ int main(int argc, char **argv){
 	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);	// from RTABMAP
 	submapCloudSub = nh.subscribe("repeat_node/submapCloud",1, submapCloudCallBack);	// From repeat pass
 	cloudAlignEstSub = nh.subscribe("repeat_node/cloudAlignment",1, cloudAlignmentCallBack);	// SROR, QRO
+	// Obtain map location
+	nh.getParam("/localisation_node/map_location", map_location);
 	
 	// main loop
+	ros::Rate rate(10);
 	while (nh.ok()){
 		ros::spinOnce();
 		performICP();
+		// Broadcast error terms
+		// TODO: Will this publish old data? Perhaps if statement could help here.
+		if (publishLoc){
+			publishLoc = false;
+			localisationUpdate.publish(gmerrOR);
+		}
+		rate.sleep();
 	}
 	
 	

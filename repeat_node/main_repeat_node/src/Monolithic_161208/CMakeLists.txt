@@ -145,18 +145,10 @@ include_directories(
 
 ## Declare a C++ executable
  add_executable(repeat_node src/repeat_node.cpp)
- add_executable(localisation_node src/localisation_node.cpp)
 
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(repeat_node
-   ${catkin_LIBRARIES}
-   ${OpenCV_LIBRARIES}
-   #cvUtility
-   #map_packaging
- )
- 
-  target_link_libraries(localisation_node
    ${catkin_LIBRARIES}
    ${OpenCV_LIBRARIES}
    #cvUtility

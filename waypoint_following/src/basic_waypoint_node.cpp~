@@ -108,10 +108,10 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = 1.0;	//[1.0, 0, 5.0]
+	tmp_wp.position.x = 0.2;	//[1.0, 0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
-	//Waypoint 3
+	/*//Waypoint 3
 	tmp_wp.position.x = 2.0;	//[2.0, 0.0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
@@ -132,7 +132,7 @@ void generate_waypoints() {
 	//Waypoint 7
 	tmp_wp.position.x = 0.0;	//[0, 0, 5.0]
 	//tmp_wp.position.y = 0.0;
-	waypoints.push_back(tmp_wp);
+	waypoints.push_back(tmp_wp);*/
 	
 	
 }
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 10 );	
+	ros::Rate loop_rate( 50 );	
 
 
 	// Local variables
@@ -197,7 +197,7 @@ int main(int argc, char **argv) {
 		truePos.header.frame_id = "world";	
 		
 		// Broadcast truepos as a pose update (for repeat node)
-		//pos_pub.publish(truePos);
+		pos_pub.publish(truePos);
 
 		// Send current goal to pose
 		poseGoal.target_pose = current_goal; 
