@@ -901,7 +901,7 @@ int main(int argc, char **argv){
 		}
 		
 		// If VO has been lost for 1 frames or more, reset VO, or if new map is requested
-		if (next_map || (VOLossCounter > 0)){
+		if (next_map || (VOLossCounter > 1)){
 			resetVO();
 			resetMap();
 			// Send reset request

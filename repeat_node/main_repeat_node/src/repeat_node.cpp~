@@ -62,7 +62,7 @@ using namespace cv;
 	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F);
 	Mat TCL_cmd;
 	Mat QCL_cmd;
-	double wp_radius = 0.2;
+	double wp_radius = 0.1;
 	vector<geometry_msgs::Pose> waypointsCL;
 	int wp_counter = 1;
 	bool next_map = false;
@@ -210,7 +210,7 @@ void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmer
 		ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
 		ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 		// Perform state update
-		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+		//updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
 		//resetMap();
 	}
 }
@@ -901,7 +901,7 @@ int main(int argc, char **argv){
 		}
 		
 		// If VO has been lost for 1 frames or more, reset VO, or if new map is requested
-		if (next_map || (VOLossCounter > 0)){
+		if (next_map || (VOLossCounter > 1)){
 			resetVO();
 			resetMap();
 			// Send reset request

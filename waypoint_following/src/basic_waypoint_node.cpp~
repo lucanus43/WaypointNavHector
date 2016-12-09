@@ -71,7 +71,7 @@ ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.
 				if( wp_counter < waypoints.size() ) {
 					current_goal.pose = waypoints.at(wp_counter);
 				} else {
-					quit_loop = true;
+					//quit_loop = true;
 					ROS_INFO( "Finished the waypoint path!" );
 				}
 			}
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 50 );	
+	ros::Rate loop_rate( 20 );	
 
 
 	// Local variables

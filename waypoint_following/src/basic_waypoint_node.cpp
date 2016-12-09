@@ -29,7 +29,7 @@ geometry_msgs::PoseStamped current_goal;
 geometry_msgs::PoseWithCovarianceStamped truePos;
 std::vector<geometry_msgs::Pose> waypoints;
 int wp_counter = 0;
-double wp_radius = 0.01;
+double wp_radius = 0.1;
 bool quit_loop = false;
 
 // Takeoff client (SimpleActionClient from actionlib)
@@ -141,7 +141,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 50 );	
+	ros::Rate loop_rate( 20 );	
 
 
 	// Local variables
