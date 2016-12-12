@@ -161,34 +161,34 @@ Author: JDev 161209
 	
 */
 // -------------------------------------------------------------
-void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmerrOR){
+void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmerrRO){
 	// Local variables
-	Mat errSORO = Mat::zeros(3,1,CV_64F);
-	Mat errQOR = Mat::zeros(4,1,CV_64F);
+	Mat errSROO = Mat::zeros(3,1,CV_64F);
+	Mat errQRO = Mat::zeros(4,1,CV_64F);
 	Mat errTOR = Mat::zeros(3,3,CV_64F);
 	
 	// Read in gmerrOR to errSORO and errTOR;
-	errSORO.at<double>(0) = gmerrOR->pose.position.x;
-	errSORO.at<double>(1) = gmerrOR->pose.position.y;
-	errSORO.at<double>(2) = gmerrOR->pose.position.z;
-	errQOR.at<double>(0) = gmerrOR->pose.orientation.x;
-	errQOR.at<double>(1) = gmerrOR->pose.orientation.y;
-	errQOR.at<double>(2) = gmerrOR->pose.orientation.z;
-	errQOR.at<double>(3) = gmerrOR->pose.orientation.w;
+	errSROO.at<double>(0) = gmerrRO->pose.position.x;
+	errSROO.at<double>(1) = gmerrRO->pose.position.y;
+	errSROO.at<double>(2) = gmerrRO->pose.position.z;
+	errQRO.at<double>(0) = gmerrRO->pose.orientation.x;
+	errQRO.at<double>(1) = gmerrRO->pose.orientation.y;
+	errQRO.at<double>(2) = gmerrRO->pose.orientation.z;
+	errQRO.at<double>(3) = gmerrRO->pose.orientation.w;
 	
 	// Normalise errQOR
-	errQOR = quatnormalise(errQOR);
+	errQRO = quatnormalise(errQRO);
 	
 	// Process
 	if (1){
 		// Convert errQOR to errTOR
-		errTOR = quat2dcm(errQOR).t();
+		errTOR = quat2dcm(errQRO).t();
 		// Calculate SORRhat_icp, TROhat_icp
 		TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
 		cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
 		cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
 		
-		SORRhat_icp = -TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
+		SORRhat_icp = -TORhat_icp.t()*errSROO - SRORhat;			// SORRhat <- state update
 		cout << "SORRhat_icp: " << SORRhat_icp << endl;
 		cout << "SORRhat: " << -SRORhat << endl;
 		
@@ -214,9 +214,10 @@ void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmer
 		ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 		ROS_INFO("QBLhat_icp: [%f,%f,%f,%f]", QBLhat_icp.at<double>(0), QBLhat_icp.at<double>(1), QBLhat_icp.at<double>(2), QBLhat_icp.at<double>(3));
 		ROS_INFO("QBL: [%f,%f,%f,%f]", QBL.at<double>(0), QBL.at<double>(1), QBL.at<double>(2), QBL.at<double>(3));
-		// Perform state update
-		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat);
-		resetMap();
+		// Perform state update -> do not update SRLLhat QRLhat
+		// TODO: SRLLhat and QRLhat break the system. Find out why.
+		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat, QRLhat);
+		//resetMap();
 	}
 }
 
@@ -616,6 +617,9 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	gmROhat.header.stamp = ros::Time::now();
 	gmROhat.header.seq++;
 	gmROhat.header.frame_id = "R-frame";	
+	
+	// Reset VO to reflect update to SCRChat
+	resetVO();
 
 }
 
@@ -646,8 +650,8 @@ void nextSubmap(){
 	currentPoseFileName << "pose_" << mapCounter << ".txt";
 	
 	// Load next submap
-	generateWaypoints(currentPoseFileName.str().c_str());
-	loadSubmapPCD(currentMapName.str().c_str());
+	generateWaypoints(map_location + currentPoseFileName.str().c_str());
+	loadSubmapPCD(map_location + currentMapName.str().c_str());
 	
 	// Reset SRLLhat, QRLhat to reflect new R frame
 	SRLLhat = SCLLhat.clone();
@@ -921,7 +925,7 @@ int main(int argc, char **argv){
 		// If VO has been lost for 1 frames or more, reset VO, or if new map is requested
 		if (next_map || (VOLossCounter > 5)){
 			resetVO();
-			resetMap();
+			//resetMap();
 			// Send reset request
 			if (!resetOdometryClient.call(odomResetReq, odomResetResp)){
 				ROS_INFO("[repeat_node] Failed to reset odometry.");

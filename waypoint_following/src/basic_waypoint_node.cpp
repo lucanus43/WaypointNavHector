@@ -208,6 +208,8 @@ int main(int argc, char **argv) {
 		// Broadcast truepos as a pose update (for repeat node)
 		pos_pub.publish(truePos);
 	}*/
+	// Spin once to get estimated pose updated to true pose.
+	ros::spinOnce();
 	
 	
 	// Send take-off goal to toc
