@@ -1,6 +1,7 @@
 <?xml version="1.0"?>
 
 <launch>
+  <param name="use_sim_time"              value="true" />
 
   <!-- Start Gazebo with wg world running in (max) realtime -->
   <include file="$(find hector_gazebo_worlds)/launch/small_indoor_scenario.launch"/>

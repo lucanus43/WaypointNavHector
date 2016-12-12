@@ -200,8 +200,12 @@ void performICP(){
 		icp.setInputSource(transformedObsCloud);
 	 	icp.setInputTarget(submapCloud);
 	 	
-	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	// Perform alignment
 	 	icp.align(alignedCloud);
+	 	
+	 	// Output fitness score and TROhat
+	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
 
 		// Obtain final transformation from ICP
 		// This is error in SORO and TRO

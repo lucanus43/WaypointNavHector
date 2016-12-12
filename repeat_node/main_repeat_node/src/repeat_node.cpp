@@ -215,7 +215,7 @@ void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmer
 		ROS_INFO("QBLhat_icp: [%f,%f,%f,%f]", QBLhat_icp.at<double>(0), QBLhat_icp.at<double>(1), QBLhat_icp.at<double>(2), QBLhat_icp.at<double>(3));
 		ROS_INFO("QBL: [%f,%f,%f,%f]", QBL.at<double>(0), QBL.at<double>(1), QBL.at<double>(2), QBL.at<double>(3));
 		// Perform state update
-		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
+		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat);
 		resetMap();
 	}
 }
@@ -559,7 +559,7 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	SRLLhat = 0.5*(SRLLhat + inSRLLhat);
 	QRLhat = 0.5*(QRLhat + inQRLhat);
 	
-	// Normalise input quaternions
+	// Normalise updated quaternions
 	QBLhat = quatnormalise(QBLhat);
 	QRLhat = quatnormalise(QRLhat);
 	
@@ -578,11 +578,10 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	//
 	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
-	//ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
-	//ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
-	
+	ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
+	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
 	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
@@ -652,6 +651,7 @@ void nextSubmap(){
 	
 	// Reset SRLLhat, QRLhat to reflect new R frame
 	SRLLhat = SCLLhat.clone();
+	// TODO: SRLLhat should be given SCLLhat I think (not SRLLhat - it won't be reset)
 	SRLLhat_ins = SRLLhat.clone();
 	SRLLhat_vo = SRLLhat.clone();
 	SRLLhat_icp = SRLLhat.clone();

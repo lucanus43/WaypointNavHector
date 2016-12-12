@@ -197,7 +197,17 @@ int main(int argc, char **argv) {
 	toc.waitForServer();
 	ROS_INFO("Takeoff client initialised.");
 	
-	// Calibrate IMU
+	// Initialise with true position
+	while(init){
+		ros::spinOnce();
+		// truePos header
+		truePos.header.stamp = ros::Time::now();
+		truePos.header.seq++;
+		truePos.header.frame_id = "world";	
+		
+		// Broadcast truepos as a pose update (for repeat node)
+		pos_pub.publish(truePos);
+	}
 	
 	
 	// Send take-off goal to toc

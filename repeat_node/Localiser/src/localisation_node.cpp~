@@ -185,7 +185,7 @@ void performICP(){
 		
 		// Apply SRORhat to observedCloud
 		for (size_t i = 0; i < observedCloud->points.size (); ++i){
-			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
+			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0)
 			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
 			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
 			
@@ -200,8 +200,12 @@ void performICP(){
 		icp.setInputSource(transformedObsCloud);
 	 	icp.setInputTarget(submapCloud);
 	 	
-	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	// Perform alignment
 	 	icp.align(alignedCloud);
+	 	
+	 	// Output fitness score and TROhat
+	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
 
 		// Obtain final transformation from ICP
 		// This is error in SORO and TRO
@@ -272,7 +276,7 @@ int main(int argc, char **argv){
 	nh.getParam("/localisation_node/map_location", map_location);
 	
 	// main loop
-	ros::Rate rate(10);
+	ros::Rate rate(5);
 	while (nh.ok()){
 		ros::spinOnce();
 		performICP();
