@@ -176,16 +176,19 @@ void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmer
 	errQOR.at<double>(2) = gmerrOR->pose.orientation.z;
 	errQOR.at<double>(3) = gmerrOR->pose.orientation.w;
 	
+	// Normalise errQOR
+	errQOR = quatnormalise(errQOR);
+	
 	// Process
-	if (doICP){
+	if (1){
 		// Convert errQOR to errTOR
-		errTOR = quat2dcm(errQOR);
+		errTOR = quat2dcm(errQOR).t();
 		// Calculate SORRhat_icp, TROhat_icp
 		TORhat_icp = errTOR*quat2dcm(QROhat).t();				// QROhat <- state update
 		cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
 		cout << "QORhat: " << dcm2quat(quat2dcm(QROhat).t()) << endl;
 		
-		SORRhat_icp = TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
+		SORRhat_icp = -TORhat_icp.t()*errSORO - SRORhat;			// SORRhat <- state update
 		cout << "SORRhat_icp: " << SORRhat_icp << endl;
 		cout << "SORRhat: " << -SRORhat << endl;
 		
@@ -209,9 +212,11 @@ void localisationUpdateCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmer
 		QBLhat_icp = dcm2quat(TCB.t()*TCLhat_icp);
 		ROS_INFO("SBLLhat_icp: [%f,%f,%f]", SBLLhat_icp.at<double>(0), SBLLhat_icp.at<double>(1), SBLLhat_icp.at<double>(2));
 		ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
+		ROS_INFO("QBLhat_icp: [%f,%f,%f,%f]", QBLhat_icp.at<double>(0), QBLhat_icp.at<double>(1), QBLhat_icp.at<double>(2), QBLhat_icp.at<double>(3));
+		ROS_INFO("QBL: [%f,%f,%f,%f]", QBL.at<double>(0), QBL.at<double>(1), QBL.at<double>(2), QBL.at<double>(3));
 		// Perform state update
 		updateState(SBLLhat_icp, QBLhat_icp, SRLLhat_icp, QRLhat_icp);
-		//resetMap();
+		resetMap();
 	}
 }
 
@@ -243,6 +248,9 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 	QCRhat_vo.at<double>(2) = (odomMsg->pose.pose.orientation.z); 
 	QCRhat_vo.at<double>(3) = (odomMsg->pose.pose.orientation.w);
 	
+	// Normalise QCRhat_vo
+	QCRhat_vo = quatnormalise(QCRhat_vo);
+	
 	// If SCRC is zero (VO lost), increment VO loss counter. SBLLhat will not be set to zero.
 	// Else, perform VO as per normal.
 	if ( fabs(norm(SCRChat_vo)) == 0){
@@ -259,7 +267,7 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		// Calculate SBLLhat_vo, QBLhat_vo, SRLLhat_vo and QRLhat_vo
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
-		ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
+		//ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
 		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
@@ -290,6 +298,9 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	QBLhat_ins.at<double>(2) = extPose->pose.orientation.z;
 	QBLhat_ins.at<double>(3) = extPose->pose.orientation.w;
 	
+	// Normalise QBLhat_ins
+	QBLhat_ins = quatnormalise(QBLhat_ins);
+	
 	// Calculate SRLLhat_ins and TRLhat_ins
 	SCLLhat_ins = quat2dcm(QBLhat_ins).t()*SCBB+SBLLhat_ins;
 	SCRLhat_ins = SCLLhat_ins - SRLLhat;				// SRLLhat <- State update	
@@ -301,6 +312,7 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	QRLhat_ins = dcm2quat(quat2dcm(QCRhat_ins).t()*TCB*quat2dcm(QBLhat_ins));	
 	
 	ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
+	ROS_INFO("QBL_ins: [%f,%f,%f,%f]", QBLhat_ins.at<double>(0), QBLhat_ins.at<double>(1), QBLhat_ins.at<double>(2), QBLhat_ins.at<double>(3));
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
 }
@@ -547,6 +559,10 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	SRLLhat = 0.5*(SRLLhat + inSRLLhat);
 	QRLhat = 0.5*(QRLhat + inQRLhat);
 	
+	// Normalise input quaternions
+	QBLhat = quatnormalise(QBLhat);
+	QRLhat = quatnormalise(QRLhat);
+	
 	// Update all state variables with new SBLLhat, QBLhat
 	SCLLhat = quat2dcm(QBLhat).t()*SCBB + SBLLhat;
 	SCRLhat = SCLLhat - SRLLhat;
@@ -558,11 +574,11 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	// ..
 	SRORhat = quat2dcm(QRLhat)*(SRLLhat - SOLLhat);		// SOLLhat <- Known		
 	QROhat = dcm2quat(quat2dcm(QRLhat)*TOLhat.t());
-	ROS_INFO("SCRLhat: [%f,%f,%f]", SCRLhat.at<double>(0), SCRLhat.at<double>(1), SCRLhat.at<double>(2));
+	//ROS_INFO("SCRLhat: [%f,%f,%f]", SCRLhat.at<double>(0), SCRLhat.at<double>(1), SCRLhat.at<double>(2));
 	//
 	//ROS_INFO_STREAM("TROhat: " << quat2dcm(QROhat));
 	//ROS_INFO_STREAM("TRLhat: " << quat2dcm(QRLhat));
-	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
+	//ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 	//ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
@@ -717,6 +733,8 @@ void waypointNav(){
 						QCL_cmd.at<double>(1) = waypointsCL.at(wp_counter).orientation.y;
 						QCL_cmd.at<double>(2) = waypointsCL.at(wp_counter).orientation.z;
 						QCL_cmd.at<double>(3) = waypointsCL.at(wp_counter).orientation.w;
+						// Normalise
+						QCL_cmd = quatnormalise(QCL_cmd);
 						SBLL_cmd = quat2dcm(QBLhat).t()*SCBB + SCLL_cmd;
 						QBL_cmd = dcm2quat(TCB.t()*quat2dcm(QCL_cmd));
 						// gmBL_cmd
@@ -901,7 +919,7 @@ int main(int argc, char **argv){
 		}
 		
 		// If VO has been lost for 1 frames or more, reset VO, or if new map is requested
-		if (next_map || (VOLossCounter > 1)){
+		if (next_map || (VOLossCounter > 5)){
 			resetVO();
 			resetMap();
 			// Send reset request

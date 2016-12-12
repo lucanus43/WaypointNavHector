@@ -5,6 +5,7 @@
 #include <sstream>
 
 #include "ros/ros.h"
+#include <std_srvs/Empty.h>
 #include "geometry_msgs/Pose.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "geometry_msgs/PoseWithCovarianceStamped.h"
@@ -95,6 +96,8 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
+	tmp_wp.position.x = -1.0;
+	tmp_wp.position.y = -1.0;
 	tmp_wp.position.z = 5.0;	//First waypoint is at [0, 0, 5]
 	// Push back
 	waypoints.push_back(tmp_wp);
@@ -108,7 +111,9 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = 0.2;	//[1.0, 0, 5.0]
+	tmp_wp.position.x = 0.4;	//[1.0, 0, 5.0]
+	tmp_wp.position.y = 0;
+	tmp_wp.position.z = 5.0;
 	waypoints.push_back(tmp_wp);
 	
 	/*//Waypoint 3
@@ -141,7 +146,7 @@ int main(int argc, char **argv) {
 	//Setup node (must be called before creating variables)
 	ros::init( argc, argv, "basic_waypoint" );
 	ros::NodeHandle nh;
-	ros::Rate loop_rate( 20 );	
+	ros::Rate loop_rate( 50 );	
 
 
 	// Local variables
@@ -150,6 +155,8 @@ int main(int argc, char **argv) {
 	hector_uav_msgs::PoseGoal poseGoal;		// PoseGoal object for simpleactionclient PoseActionClient
 	ros::Subscriber pos_sub;
 	ros::Publisher pos_pub;					// Publish truth data
+	ros::ServiceClient calibrateIMUClient;
+	std_srvs::Empty emptySrv;
 	hector_uav_msgs::TakeoffGoal goal;		// Goal (empty message) for TakeoffClient
 
 
@@ -158,6 +165,9 @@ int main(int argc, char **argv) {
 	// Publish to /position_goal, and Listen to /ground_truth_to_tf/pose (current pose)
 	pos_sub = nh.subscribe( "ground_truth_to_tf/pose", 1000, position_cb );
 	pos_pub = nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("poseupdate", 1);
+	// Services
+	calibrateIMUClient = nh.serviceClient<std_srvs::Empty>("/raw_imu/calibrate");
+	
 	// Generate the waypoints
 	generate_waypoints();
 		
@@ -168,6 +178,13 @@ int main(int argc, char **argv) {
 
 	//Write something so we know the node is running
 	ROS_INFO( "Publishing position goal..." );
+	
+	// Publish IMU reset request
+	/*if(!calibrateIMUClient.call(emptySrv)){
+		ROS_INFO_STREAM("Failed to calibrate IMU");
+	} else {
+		ROS_INFO("[repeat_node] Succeeded in calibrating IMU.");
+	}*/
 
 
 	// Initialise the PoseActionClient
@@ -179,6 +196,8 @@ int main(int argc, char **argv) {
 	TakeoffClient toc(nh, "action/takeoff");
 	toc.waitForServer();
 	ROS_INFO("Takeoff client initialised.");
+	
+	// Calibrate IMU
 	
 	
 	// Send take-off goal to toc
