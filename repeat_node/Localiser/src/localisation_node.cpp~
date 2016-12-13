@@ -60,10 +60,10 @@ using namespace cv;
 // Main variables
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	Mat SRORhat = Mat::zeros(3,1,CV_64F);
-	Mat errQOR = Mat::zeros(4,1,CV_64F);
+	Mat errQRO = Mat::zeros(4,1,CV_64F);
 	Mat QROhat = Mat::zeros(3,1,CV_64F);
-	Mat errTOR = Mat::zeros(3,3,CV_64F);
-	Mat errSORO = Mat::zeros(3,1,CV_64F);
+	Mat errTRO = Mat::zeros(3,3,CV_64F);
+	Mat errSROO = Mat::zeros(3,1,CV_64F);
 	geometry_msgs::PoseStamped gmerrOR;
 	bool doICP = false;
 	std::string map_location;
@@ -185,7 +185,7 @@ void performICP(){
 		
 		// Apply SRORhat to observedCloud
 		for (size_t i = 0; i < observedCloud->points.size (); ++i){
-			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0)
+			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
 			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
 			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
 			
@@ -223,26 +223,26 @@ void performICP(){
   			icp.getFitnessScore() << std::endl;
 			for (int i = 0; i < 3; i++){
 				for (int j = 0; j < 3; j++) {
-					errTOR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+					errTRO.at<double>(i,j) = icp.getFinalTransformation()(i,j);
 				}
-				errSORO.at<double>(i) = icp.getFinalTransformation()(i,3);
+				errSROO.at<double>(i) = icp.getFinalTransformation()(i,3);
 			}
-			cout << "errTOR: " << errTOR << endl;
-			cout << "errSORO: " << errSORO << endl;
+			cout << "errTRO: " << errTRO << endl;
+			cout << "errSROO: " << errSROO << endl;
 		}
 		// Convert errTOR and errSORO to gmerrOR for broadcast
-		errQOR = dcm2quat(errTOR);
+		errQRO = dcm2quat(errTRO);
 		
-		gmerrOR.pose.position.x = errSORO.at<double>(0);
-		gmerrOR.pose.position.y = errSORO.at<double>(1);
-		gmerrOR.pose.position.z = errSORO.at<double>(2);
-		gmerrOR.pose.orientation.x = errQOR.at<double>(0);
-		gmerrOR.pose.orientation.y = errQOR.at<double>(1);
-		gmerrOR.pose.orientation.z = errQOR.at<double>(2);
-		gmerrOR.pose.orientation.w = errQOR.at<double>(3);
-		gmerrOR.header.stamp = ros::Time::now();
-		gmerrOR.header.seq++;
-		gmerrOR.header.frame_id = "R-frame";
+		gmerrRO.pose.position.x = errSROO.at<double>(0);
+		gmerrRO.pose.position.y = errSROO.at<double>(1);
+		gmerrRO.pose.position.z = errSROO.at<double>(2);
+		gmerrRO.pose.orientation.x = errQRO.at<double>(0);
+		gmerrRO.pose.orientation.y = errQRO.at<double>(1);
+		gmerrRO.pose.orientation.z = errQRO.at<double>(2);
+		gmerrRO.pose.orientation.w = errQRO.at<double>(3);
+		gmerrRO.header.stamp = ros::Time::now();
+		gmerrRO.header.seq++;
+		gmerrRO.header.frame_id = "O-frame";
 	}
 }
 
@@ -284,7 +284,7 @@ int main(int argc, char **argv){
 		// TODO: Will this publish old data? Perhaps if statement could help here.
 		if (publishLoc){
 			publishLoc = false;
-			localisationUpdate.publish(gmerrOR);
+			localisationUpdate.publish(gmerrRO);
 		}
 		rate.sleep();
 	}

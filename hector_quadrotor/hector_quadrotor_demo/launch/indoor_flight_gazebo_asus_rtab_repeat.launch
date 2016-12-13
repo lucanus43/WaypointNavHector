@@ -20,7 +20,7 @@
   	<arg name="rtabmapviz" value="true"/>
   	<arg name="rgb_topic" value="/camera/rgb/image_raw"/>
   	<arg name="depth_topic" value="/camera/depth/image_raw"/>
-  	<arg name="wait_for_transform" value="0.0"/>
+  	<arg name="wait_for_transform" value="1.0"/>
   	<arg name="queue_size" value="50"/>
   </include>
   	
