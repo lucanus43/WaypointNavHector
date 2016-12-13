@@ -856,6 +856,7 @@ int main(int argc, char **argv){
 	ros::Publisher cloudAlignmentPub;
 	PoseActionClient PAC(nh, "action/pose");	// Pose action client
 	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset");
+	ros::ServiceClient newMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
 	ros::ServiceClient resetOdometryClient = nh.serviceClient<rtabmap_ros::ResetPose>("/rtabmap/reset_odom_to_pose");	// Reset to specified SCRChat
 	ros::ServiceClient resetOdometryToZero = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom"); // Allows odom to be reset to zero
 	std_srvs::Empty emptySrv;
@@ -951,6 +952,12 @@ int main(int argc, char **argv){
 			} else {
 				ROS_INFO("[repeat_node] Succeeded in resetting map.");
 				clearMap = false;
+			}
+			
+			if (!newMapClient.call(emptySrv)){
+				ROS_INFO("[repeat_node] Failed to trigger new map.");
+			} else {
+				ROS_INFO("[repeat_node] Succeeded in triggering new map.");
 			}
 		}
 		ros::spinOnce();

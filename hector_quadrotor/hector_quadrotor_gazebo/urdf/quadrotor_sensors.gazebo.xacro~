@@ -6,18 +6,18 @@
   <xacro:macro name="quadrotor_sensors">
         <gazebo>
           <plugin name="quadrotor_imu_sim" filename="libhector_gazebo_ros_imu.so">
-            <updateRate>50.0</updateRate>
+            <updateRate>100.0</updateRate>
             <bodyName>base_link</bodyName>
             <frameId>$(arg base_link_frame)</frameId>
             <topicName>raw_imu</topicName>
             <rpyOffsets>0 0 0</rpyOffsets> 
-            <rateGaussianNoise>0</rateGaussianNoise> 
-            <accelDrift>0 0 0</accelDrift>
+            <rateGaussianNoise>0.1 0.1 0.1</rateGaussianNoise> 
+            <accelDrift>0.1 0.1 0.1</accelDrift>
             <accelOffset>0 0 0</accelOffset>
-            <accelGaussianNoise>0 0 0</accelGaussianNoise>
+            <accelGaussianNoise>0.35 0.35 0.3</accelGaussianNoise>
             <rateDrift>0 0 0</rateDrift>
             <rateOffset>0 0 0</rateOffset>
-            <rateGaussianNoise>0.00 0.00 0.00</rateGaussianNoise>
+            <rateGaussianNoise>0.05 0.05 0.015</rateGaussianNoise>
           </plugin>
           
           <!-- <plugin name="quadrotor_imu_sim" filename="libhector_gazebo_ros_imu.so">
