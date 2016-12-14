@@ -83,6 +83,10 @@ using namespace cv;
 	Mat SCBB = Mat::zeros(3,1,CV_64F);
 	Mat SBLL = Mat::zeros(3,1,CV_64F);
 	Mat QBL = Mat::zeros(4,1,CV_64F);
+	Mat SRLL = Mat::zeros(3,1,CV_64F);
+	Mat QRL = Mat::zeros(4,1,CV_64F);
+	Mat QCL = Mat::zeros(4,1,CV_64F);
+	Mat SCLL = Mat::zeros(3,1,CV_64F);
 	
 // Teach node variables
 	Mat TOLhat = Mat::zeros(3,3,CV_64F);
@@ -269,7 +273,7 @@ void voCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		QBLhat_vo =  dcm2quat(TCB.t()*TCLhat_vo);				
 		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;	
 		//ROS_INFO("SCRChat_vo: [%f,%f,%f]", SCRChat_vo.at<double>(0), SCRChat_vo.at<double>(1), SCRChat_vo.at<double>(2));
-		ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
+		//ROS_INFO("SBLLhat_vo: [%f,%f,%f]", SBLLhat_vo.at<double>(0), SBLLhat_vo.at<double>(1), SBLLhat_vo.at<double>(2));
 		// Send to state update
 		updateState(SBLLhat_vo, QBLhat_vo, SRLLhat_vo, dcm2quat(TRLhat_vo));
 	}
@@ -312,8 +316,8 @@ void insCallBack( const geometry_msgs::PoseStamped::ConstPtr& extPose ){
 	// TRL = TRC*TCB*TBL
 	QRLhat_ins = dcm2quat(quat2dcm(QCRhat_ins).t()*TCB*quat2dcm(QBLhat_ins));	
 	
-	ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
-	ROS_INFO("QBL_ins: [%f,%f,%f,%f]", QBLhat_ins.at<double>(0), QBLhat_ins.at<double>(1), QBLhat_ins.at<double>(2), QBLhat_ins.at<double>(3));
+	//ROS_INFO("SBLLhat_ins: [%f,%f,%f]", SBLLhat_ins.at<double>(0), SBLLhat_ins.at<double>(1), SBLLhat_ins.at<double>(2));
+	//ROS_INFO("QBL_ins: [%f,%f,%f,%f]", QBLhat_ins.at<double>(0), QBLhat_ins.at<double>(1), QBLhat_ins.at<double>(2), QBLhat_ins.at<double>(3));
 	// Send to state update
 	updateState(SBLLhat_ins, QBLhat_ins, SRLLhat_ins, QRLhat_ins);
 }
@@ -339,6 +343,10 @@ void truePositionCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmBL ) {
 	QBL.at<double>(1) = gmBL->pose.orientation.y;
 	QBL.at<double>(2) = gmBL->pose.orientation.z;
 	QBL.at<double>(3) = gmBL->pose.orientation.w;
+	
+	// SCLL, SRLL
+	SCLL = quat2dcm(QBL).t()*SCBB+SBLL;
+	QCL = dcm2quat(TCB*quat2dcm(QBL));
 	
 	
 }
@@ -463,6 +471,10 @@ bool initVars(){
 	SCBB.at<double>(0) = 0.1;
 	SCBB.at<double>(2) = -0.03;
 	
+	// Set truth QRL/SRLL
+	SRLL = quat2dcm(QBL).t()*SCBB+SBLL;
+	QRL = dcm2quat(TCB*quat2dcm(QBL));
+	
 	// Initialise state variables
 	// SBLLhat, QBLhat
 	SBLLhat = SBLL.clone(); QBLhat = QBL.clone();
@@ -582,7 +594,9 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSRLLhat, Mat inQRLhat){
 	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	ROS_INFO("SBLL: [%f,%f,%f]", SBLL.at<double>(0), SBLL.at<double>(1), SBLL.at<double>(2));
 	ROS_INFO("QRLhat: [%f,%f,%f,%f]", QRLhat.at<double>(0), QRLhat.at<double>(1), QRLhat.at<double>(2), QRLhat.at<double>(3));
+	ROS_INFO("QRL: [%f,%f,%f,%f]", QRL.at<double>(0), QRL.at<double>(1), QRL.at<double>(2), QRL.at<double>(3));
 	ROS_INFO("SRLLhat: [%f,%f,%f]", SRLLhat.at<double>(0), SRLLhat.at<double>(1), SRLLhat.at<double>(2));
+	ROS_INFO("SRLL: [%f,%f,%f]", SRLL.at<double>(0), SRLL.at<double>(1), SRLL.at<double>(2));
 	// gmBLhat for publishing
 	gmBLhat.pose.pose.position.x = SBLLhat.at<double>(0);
 	gmBLhat.pose.pose.position.y = SBLLhat.at<double>(1);
@@ -671,6 +685,10 @@ void nextSubmap(){
 	// Reset SCRC
 	SCRChat = Mat::zeros(3,1,CV_64F);		// TODO: SCRChat cannot be zero for standard VO reset.
 	
+	// DEBUG: Truth data SRLL/QRL
+	SRLL = quat2dcm(QBL).t()*SCBB+SBLL;
+	QRL = dcm2quat(TCB*quat2dcm(QBL));
+	
 	// update state
 	updateState(SBLLhat, QBLhat, SRLLhat, QRLhat);	
 	
@@ -725,9 +743,9 @@ void waypointNav(){
 	ROS_INFO_STREAM("wp_counter: " << wp_counter << " waypointsCL.size(): " << waypointsCL.size());
 	//ROS_INFO("SCLL_cmd: [%f,%f,%f]", SCLL_cmd.at<double>(0), SCLL_cmd.at<double>(1), SCLL_cmd.at<double>(2));
 	//ROS_INFO("SCLLhat: [%f,%f,%f]", SCLLhat.at<double>(0), SCLLhat.at<double>(1), SCLLhat.at<double>(2));
-	ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
+	//ROS_INFO("SBLLhat: [%f,%f,%f]", SBLLhat.at<double>(0), SBLLhat.at<double>(1), SBLLhat.at<double>(2));
 	ROS_INFO("SBLL_cmd: [%f,%f,%f]", SBLL_cmd.at<double>(0), SBLL_cmd.at<double>(1), SBLL_cmd.at<double>(2));
-	ROS_INFO("QBLhat: [%f,%f,%f,%f]", QBLhat.at<double>(0), QBLhat.at<double>(1), QBLhat.at<double>(2), QBLhat.at<double>(3));
+	//ROS_INFO("QBLhat: [%f,%f,%f,%f]", QBLhat.at<double>(0), QBLhat.at<double>(1), QBLhat.at<double>(2), QBLhat.at<double>(3));
 	ROS_INFO("QBL_cmd: [%f,%f,%f,%f]", QBL_cmd.at<double>(0), QBL_cmd.at<double>(1), QBL_cmd.at<double>(2), QBL_cmd.at<double>(3));
 	if( fabs( SBLLhat.at<double>(0) -  SBLL_cmd.at<double>(0) ) < wp_radius && fabs( QBLhat.at<double>(0) -  QBL_cmd.at<double>(0) ) < wp_radius) {
 		if( fabs( SBLLhat.at<double>(1) - SBLL_cmd.at<double>(1))  < wp_radius && fabs( QBLhat.at<double>(1) -  QBL_cmd.at<double>(1) ) < wp_radius) {
@@ -946,14 +964,14 @@ int main(int argc, char **argv){
 			}
 		}
 		if (clearMap){
-		// (service: trigger_new_map (std_srvs/Empty) )
+		// (service: rtabmap/reset (std_srvs/Empty) )
 			if (!resetMapClient.call(emptySrv)){
 				ROS_INFO("[repeat_node] Failed to reset map.");
 			} else {
 				ROS_INFO("[repeat_node] Succeeded in resetting map.");
 				clearMap = false;
 			}
-			
+			// (service: rtabmap/trigger_new_map (std_srvs/Empty) )
 			if (!newMapClient.call(emptySrv)){
 				ROS_INFO("[repeat_node] Failed to trigger new map.");
 			} else {
