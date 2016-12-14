@@ -451,7 +451,7 @@ int main(int argc, char **argv){
 	//tf::TransformListener TCBlistener;
 	
 	// Local variables
-	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/trigger_new_map");
+	ros::ServiceClient resetMapClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset");
 	ros::ServiceClient resetOdometryClient = nh.serviceClient<std_srvs::Empty>("/rtabmap/reset_odom");
 	std_srvs::Empty emptySrv;
 	
@@ -476,7 +476,7 @@ int main(int argc, char **argv){
 	// Subscribe to landing action topic
 	landSub = nh.subscribe("action/landing/goal", 1000, landingCallBack);
 	// Subscribe to takeoff action topic
-	takeOffSub = nh.subscribe("action/takeoff/status", 1000, takeoffCallBack);
+	takeOffSub = nh.subscribe("action/takeoff", 1000, takeoffCallBack);
 	// Command Pose subscriber
 	cmdPoseSub = nh.subscribe("/command/pose", 1000, cmdPoseCallBack);
 	// Subscribe to odom topic
@@ -489,10 +489,20 @@ int main(int argc, char **argv){
 	while(nh.ok()){
 		// For now, reset odometry when the first waypoint is reached (takeoff)
 		
+		// Check to see if we need a new map
+		if (!saveMap && (fabs(norm(SCOLhat)) > 2.0)){		// |SCOL| > 2 m and map isn't currently being saved			// Save current point cloud map from cloud_map topic to pcd file
+			// if listening to cloud_map topic, set a flag for cb function to save.
+			ROS_INFO("[teach_node] Saving map to file.");
+			ROS_INFO_STREAM("[teach_node] (fabs(norm(SCOLhat)): " << (fabs(norm(SCOLhat))));
+			saveMap = true;
+		}// Map will be reset on next call to cloudCallBack
+		
 		if (next_map){
-			// Reset vecSCOL and vecTCL
-			ROS_INFO("[teach_node] Resetting variables.");
-			
+			// initialise new map
+    		initNextSubmap();
+			next_map = false;
+			saveMap = false;
+			// Reset odom and map
 			if (!resetOdometryClient.call(emptySrv)){
 				ROS_INFO("[teach_node] Failed to reset odometry.");
 			} else {
@@ -504,10 +514,6 @@ int main(int argc, char **argv){
 			} else {
 				ROS_INFO("[teach_node] Succeeded in resetting map.");
 			}
-			next_map = false;
-			saveMap = false;
-			   // initialise new map
-    		initNextSubmap();
 		}// endif
 		
 		
@@ -535,13 +541,6 @@ int main(int argc, char **argv){
 			}
 		}
 		
-		// Check to see if we need a new map
-		if (!saveMap && (fabs(norm(SCOLhat)) > 2.0)){		// |SCOL| > 2 m and map isn't currently being saved			// Save current point cloud map from cloud_map topic to pcd file
-			// if listening to cloud_map topic, set a flag for cb function to save.
-			ROS_INFO("[teach_node] Saving map to file.");
-			ROS_INFO_STREAM("[teach_node] (fabs(norm(SCOLhat)): " << (fabs(norm(SCOLhat))));
-			saveMap = true;
-		}// Map will be reset on next call to cloudCallBack
 		
 		// TODO: Use VOLossCounter to reset VO using INS. Use reset to pose (SCOChat).
 		
