@@ -61,7 +61,7 @@ using namespace cv;
 	tf::StampedTransform tfTCB;
 	Mat SBLL_cmd = Mat::zeros(3,1,CV_64F); // TODO: Change convention here for commanded values
 	Mat QBL_cmd = Mat::zeros(4,1,CV_64F);	// TODO: Change convention here for commanded values
-	double wp_radius = 0.01;
+	double wp_radius = 0.1;
 	int fileCounter = 0;
 // Map packaging variables
 	bool saveMap = false;
@@ -179,8 +179,6 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
     	next_map = true;
     	// Increment fileCounter
     	fileCounter++;
-    	// initialise new map
-    	initNextSubmap();
     }
 }
 
@@ -227,16 +225,20 @@ void odomCallBack(const nav_msgs::Odometry::ConstPtr& odomMsg){
 		TOChat_vo = quat2dcm(QCOhat_vo).t();
 		// Obtain TCLhat (estimated TCL from VO)
 		TCLhat_vo = TOChat_vo.t()*quat2dcm(QOLhat);		// QOLhat <- from initialisation of submap
+		QBLhat_vo = dcm2quat(TCB.t()*TCLhat_vo);
 
 		// Transform SCOC from C coordinates to L coords
 		SCOLhat_vo = TCLhat_vo.t()*SCOChat_vo;
 		// Calculate SCLLhat (not used, just for output)
 		SCLLhat_vo = SCOLhat_vo + SOLLhat;	// SCOLhat <- from initialisation of submap
+		SBLLhat_vo = -quat2dcm(QBLhat_vo).t()*SCBB + SCLLhat_vo;
+		// Calculate SOLLhat_vo (unused, for display only)
+		SOLLhat_vo = -SCOLhat_vo + SCLLhat_vo;
 
 		ROS_INFO_STREAM("[teach_node] SCLL: " << SCLL);
 		ROS_INFO_STREAM("[teach_node] SBLL: " << SBLL);
-		ROS_INFO_STREAM("[teach_node] SCOLhat: " << SCOLhat_vo);
-		ROS_INFO_STREAM("[teach_node] SOLLhat: " << SOLLhat_vo);
+		ROS_INFO_STREAM("[teach_node] SCOLhat_vo: " << SCOLhat_vo);
+		ROS_INFO_STREAM("[teach_node] SOLLhat_vo: " << SOLLhat_vo);
 		// Output SCOL to WS
 		//ROS_INFO("[teach_node] SCOL: [%f,%f,%f]", SCOLhat.at<double>(0), SCOLhat.at<double>(1), SCOLhat.at<double>(2));
 	
@@ -386,6 +388,8 @@ void updateState(Mat inSBLLhat, Mat inQBLhat, Mat inSOLLhat, Mat inQOLhat){
 	//..
 	SCOChat = quat2dcm(QCLhat)*SCOLhat;		// Unused for now. Will be used when INS added.
 	
+	ROS_INFO("SCOLhat: [%f,%f,%f]", SCOLhat.at<double>(0), SCOLhat.at<double>(1), SCOLhat.at<double>(2));
+	
 	// Push poses back into vectors
 	// TODO: Only save poses when a certain distance has been travelled or angular change has been observed.
 	// For now only save SCOL and TCL (camera pose wrt. local level frame).
@@ -409,9 +413,6 @@ void initNextSubmap(){
 	// Reset vecSCOL, vecTCL, SCOLhat nad TCLhat.
 	vecSCOL.clear();
 	vecTCL.clear();
-	// Reset SCOL and TCL;
-	SCOLhat.release();
-	QCLhat.release();
 	// Reset SOLLhat, QOLhat to reflect new O frame
 	SOLLhat = SCLLhat.clone();
 	SOLLhat_vo = SOLLhat.clone();
@@ -420,10 +421,8 @@ void initNextSubmap(){
 	QOLhat_vo = QOLhat.clone();
 	// Set SCOChat to zero
 	SCOChat = Mat::zeros(3,1,CV_64F);
-
 	// update state
 	updateState(SBLLhat, QBLhat, SOLLhat, QOLhat);	
-
 	
 }
 
@@ -462,7 +461,7 @@ int main(int argc, char **argv){
 	truePoseSub = nh.subscribe("/ground_truth_to_tf/pose", 10, truePositionCallBack);
 	
 	// Initialisation loop
-	ros::Rate rate(10.0);
+	ros::Rate rate(20.0);
 	// Loop (till variables are initialised)
 	while(nh.ok() && !initVars()){
 		ros::spinOnce();
@@ -489,6 +488,28 @@ int main(int argc, char **argv){
 	// Main Loop (till waypoints are complete/landing initiated)
 	while(nh.ok()){
 		// For now, reset odometry when the first waypoint is reached (takeoff)
+		
+		if (next_map){
+			// Reset vecSCOL and vecTCL
+			ROS_INFO("[teach_node] Resetting variables.");
+			
+			if (!resetOdometryClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset odometry.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting odometry.");
+			}
+			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+			if (!resetMapClient.call(emptySrv)){
+				ROS_INFO("[teach_node] Failed to reset map.");
+			} else {
+				ROS_INFO("[teach_node] Succeeded in resetting map.");
+			}
+			next_map = false;
+			saveMap = false;
+			   // initialise new map
+    		initNextSubmap();
+		}// endif
+		
 		
 		// TRUTH DATA USED HERE. 
 		// TODO: Use estimated poses instead of truth data
@@ -524,23 +545,7 @@ int main(int argc, char **argv){
 		
 		// TODO: Use VOLossCounter to reset VO using INS. Use reset to pose (SCOChat).
 		
-		if (next_map){
-			// Reset vecSCOL and vecTCL
-			ROS_INFO("[teach_node] Resetting variables.");
-			if (!resetOdometryClient.call(emptySrv)){
-				ROS_INFO("[teach_node] Failed to reset odometry.");
-			} else {
-				ROS_INFO("[teach_node] Succeeded in resetting odometry.");
-			}
-			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
-			if (!resetMapClient.call(emptySrv)){
-				ROS_INFO("[teach_node] Failed to reset map.");
-			} else {
-				ROS_INFO("[teach_node] Succeeded in resetting map.");
-			}
-			next_map = false;
-			saveMap = false;
-		}// endif
+
 		ros::spinOnce();
 		rate.sleep();
 	}// end loop

@@ -30,7 +30,7 @@ geometry_msgs::PoseStamped current_goal;
 geometry_msgs::PoseWithCovarianceStamped truePos;
 std::vector<geometry_msgs::Pose> waypoints;
 int wp_counter = 0;
-double wp_radius = 0.1;
+double wp_radius = 0.01;
 bool quit_loop = false;
 
 // Takeoff client (SimpleActionClient from actionlib)
@@ -96,8 +96,8 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = -1.0;
-	tmp_wp.position.y = -1.0;
+	tmp_wp.position.x = -0.0;
+	tmp_wp.position.y = -0.0;
 	tmp_wp.position.z = 5.0;	//First waypoint is at [0, 0, 5]
 	// Push back
 	waypoints.push_back(tmp_wp);
