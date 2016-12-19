@@ -61,11 +61,16 @@ using namespace cv;
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
 	Mat SRORhat = Mat::zeros(3,1,CV_64F);
 	Mat errQRO = Mat::zeros(4,1,CV_64F);
-	Mat QROhat = Mat::zeros(3,1,CV_64F);
+	Mat QROhat = Mat::zeros(4,1,CV_64F);
+	Mat TReR = Mat::zeros(3,3,CV_64F);
+	Mat SReRR = Mat::zeros(3,1,CV_64F);
 	Mat errTRO = Mat::zeros(3,3,CV_64F);
 	Mat errSROO = Mat::zeros(3,1,CV_64F);
+	Mat SOROhat = Mat::zeros(3,1,CV_64F);
 	geometry_msgs::PoseStamped gmerrRO;
-	bool doICP = false;
+	bool submapCloudAvailable = false;
+	bool observedCloudAvailable = false;
+	bool poseAvailable = false;
 	std::string map_location;
 	bool publishLoc = false;
 	
@@ -108,6 +113,7 @@ void cloudAlignmentCallBack( const geometry_msgs::PoseStamped::ConstPtr& gmRO ){
 	QROhat.at<double>(1) = gmRO->pose.orientation.y;
 	QROhat.at<double>(2) = gmRO->pose.orientation.z;
 	QROhat.at<double>(3) = gmRO->pose.orientation.w;
+	poseAvailable = true;
 }
 
 // -------------------------------------------------------------
@@ -127,6 +133,7 @@ void submapCloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>
 	pcl_conversions::toPCL(*input,pcl_pc2);
 	pcl::fromPCLPointCloud2(pcl_pc2,*submapCloud);
 	submapCloud->is_dense = false;
+	submapCloudAvailable = true;
 }
 
 
@@ -147,7 +154,7 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	pcl_conversions::toPCL(*input,pcl_pc2);
 	pcl::fromPCLPointCloud2(pcl_pc2,*observedCloud);
 	observedCloud->is_dense = false;
-	doICP = true;
+	observedCloudAvailable = true;
 }
 
 
@@ -166,56 +173,76 @@ void performICP(){
 	// Local variables
 	pcl::PointCloud<pcl::PointXYZ> alignedCloud;
 	pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedObsCloud(new pcl::PointCloud<pcl::PointXYZ>); 
-	Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
-	Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
+	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedSubCloud(new pcl::PointCloud<pcl::PointXYZ>); 
+	Mat SPRO_sub = Mat::zeros(3,1,CV_64F);
+	Mat SPRR_sub = Mat::zeros(3,1,CV_64F);
+	//Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
+	//Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
 	
 	// Process
-	// Set transformedObsCloud to have the same data as observedCloud
-	*transformedObsCloud = *observedCloud;
+	// Set transformedSubCloud to have the same data as submapCloud
+	*transformedSubCloud = *submapCloud;
 	
-	if (doICP){
+
+	
+	if (observedCloudAvailable && poseAvailable){
+		// Set poseAvailable, submapCloudAvailable and cloudAvailable to false
+		poseAvailable = false;
+		observedCloudAvailable = false;
+		submapCloudAvailable = false;
+	
+		// Need to determine errSORO/errTOR
 		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
 		// Obtain SPOR_obs using
-		// SPOR_obs = SPRR_obs + SRORhat where SRORhat = TRLhat*(SRCLhat + SOLLhat)
-		// Need SPOO_obs, so use SPOO_obs = TROhat*SPOR_obs (TROhat = TRLhat*TOLhat.t())
-		// ICP between SPOO_obs, SPOO_sub will give error (error(SORO), error (TOR)). 
-		// Assume error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
+		// SPRO_sub = SPOO_sub + SOROhat 
+		// Need SPRR_sub, so use SPRR_sub = TROhat*SPRO_sub
+		// ICP between SPRR_obs, SPRR_sub will give error (error(SRReR), error (TReR)). 
+		// DO NOT ASSUME error in SPOO_obs and SPOO_sub is equivalent to error in SORO,
 		// Correct SRORhat, TROhat.
 		
-		// Apply SRORhat to observedCloud
-		for (size_t i = 0; i < observedCloud->points.size (); ++i){
-			SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
-			SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
-			SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
+		// Apply SOROhat to submapCloud
+		SOROhat = -quat2dcm(QROhat).t()*SRORhat;
+		for (size_t i = 0; i < submapCloud->points.size (); ++i){
+			SPRO_sub.at<double>(0) = submapCloud->points[i].x + SOROhat.at<double>(0);
+			SPRO_sub.at<double>(1) = submapCloud->points[i].y + SOROhat.at<double>(1);
+			SPRO_sub.at<double>(2) = submapCloud->points[i].z + SOROhat.at<double>(2);
 			
-			SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
+		//	SPOR_obs.at<double>(0) = observedCloud->points[i].x + SRORhat.at<double>(0);
+		//	SPOR_obs.at<double>(1) = observedCloud->points[i].y + SRORhat.at<double>(1);
+		//	SPOR_obs.at<double>(2) = observedCloud->points[i].z + SRORhat.at<double>(2);
 			
-    		transformedObsCloud->points[i].x = SPOO_obs.at<double>(0);
-			transformedObsCloud->points[i].y = SPOO_obs.at<double>(1);
-			transformedObsCloud->points[i].z = SPOO_obs.at<double>(2);
-		}
+		//	SPOO_obs = quat2dcm(QROhat).t()*SPOR_obs;
 		
-		// Perform icp on transformedObsCloud
-		icp.setInputSource(transformedObsCloud);
-	 	icp.setInputTarget(submapCloud);
+			SPRR_sub = quat2dcm(QROhat)*SPRO_sub;
+			
+    		transformedSubCloud->points[i].x = SPRR_sub.at<double>(0);
+			transformedSubCloud->points[i].y = SPRR_sub.at<double>(1);
+			transformedSubCloud->points[i].z = SPRR_sub.at<double>(2);
+		}
+		// Output to user
+
+		// Perform icp on transformedSubCloud -> This produces SReR and QReR (transform from
+		// observedCloud to transformedSubCloud).
+		icp.setInputSource(observedCloud);
+	 	icp.setInputTarget(transformedSubCloud);
 	 	
 	 	// Perform alignment
 	 	icp.align(alignedCloud);
 	 	
 	 	// Output fitness score and TROhat
 	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
+	 	ROS_INFO_STREAM("SOROhat: " <<  SOROhat);
 	 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
 
 		// Obtain final transformation from ICP
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
 		if (icp.getFitnessScore() < 0.01){
-			doICP = false;
 			publishLoc = true;
 			// Align to alignedCloud
-			pcl::io::savePCDFileASCII (map_location + "obsCloud.pcd", *observedCloud);
-			pcl::io::savePCDFileASCII (map_location + "transformedObs.pcd", *transformedObsCloud);
+			// Save files
+	 		pcl::io::savePCDFileASCII (map_location + "obsCloud.pcd", *observedCloud);
+			pcl::io::savePCDFileASCII (map_location + "transformedSub.pcd", *transformedSubCloud);
 			pcl::io::savePCDFileASCII (map_location + "aligned.pcd", alignedCloud);
 		
 		
@@ -223,26 +250,59 @@ void performICP(){
   			icp.getFitnessScore() << std::endl;
 			for (int i = 0; i < 3; i++){
 				for (int j = 0; j < 3; j++) {
-					errTRO.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+					TReR.at<double>(i,j) = icp.getFinalTransformation()(i,j);
 				}
-				errSROO.at<double>(i) = icp.getFinalTransformation()(i,3);
+				SReRR.at<double>(i) = icp.getFinalTransformation()(i,3);
 			}
+			errTRO = TReR.t(); //TReR.t();		// QROhat is technically QReOhat
+			errSROO = -SReRR;	//(TReR.t()*quat2dcm(QROhat)).t()*SReRR;		// Likewise, SRORhat is SReORehat
 			cout << "errTRO: " << errTRO << endl;
 			cout << "errSROO: " << errSROO << endl;
-		}
-		// Convert errTOR and errSORO to gmerrOR for broadcast
-		errQRO = dcm2quat(errTRO);
+			
+			// Convert errTOR and errSORO to gmerrOR for broadcast
+			errQRO = dcm2quat(errTRO);
 		
-		gmerrRO.pose.position.x = errSROO.at<double>(0);
-		gmerrRO.pose.position.y = errSROO.at<double>(1);
-		gmerrRO.pose.position.z = errSROO.at<double>(2);
-		gmerrRO.pose.orientation.x = errQRO.at<double>(0);
-		gmerrRO.pose.orientation.y = errQRO.at<double>(1);
-		gmerrRO.pose.orientation.z = errQRO.at<double>(2);
-		gmerrRO.pose.orientation.w = errQRO.at<double>(3);
-		gmerrRO.header.stamp = ros::Time::now();
-		gmerrRO.header.seq++;
-		gmerrRO.header.frame_id = "O-frame";
+			gmerrRO.pose.position.x = errSROO.at<double>(0);
+			gmerrRO.pose.position.y = errSROO.at<double>(1);
+			gmerrRO.pose.position.z = errSROO.at<double>(2);
+			gmerrRO.pose.orientation.x = errQRO.at<double>(0);
+			gmerrRO.pose.orientation.y = errQRO.at<double>(1);
+			gmerrRO.pose.orientation.z = errQRO.at<double>(2);
+			gmerrRO.pose.orientation.w = errQRO.at<double>(3);
+			gmerrRO.header.stamp = ros::Time::now();
+			gmerrRO.header.seq++;
+			gmerrRO.header.frame_id = "O-frame";
+			
+		} else {
+			// NOTE:	If observed cloud is used, error terms can be applied to
+			//			TORhat/SOROhat due to observedCloud being SPRRhat_obs points.
+			//			Error terms will actually be TRO and SORO. Will not need to be applied to QROhat/SRORhat.
+			/*// Perform icp on observedCloud
+			icp.setInputSource(observedCloud);
+		 	icp.setInputTarget(submapCloud);
+		 	icp.align(alignedCloud);
+		 	std::cout << "Failed with transformedObs. Trying ObservedCloud." << std::endl;
+		 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
+		 	if (icp.getFitnessScore() < 0.01){
+				doICP = false;
+				publishLoc = true;
+				// Align to alignedCloud
+				pcl::io::savePCDFileASCII (map_location + "aligned.pcd", alignedCloud);
+		
+		
+				std::cout << "(observedCloud) has converged:" << icp.hasConverged() << " score: " <<
+	  			icp.getFitnessScore() << std::endl;
+				for (int i = 0; i < 3; i++){
+					for (int j = 0; j < 3; j++) {
+						errTRO.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+					}
+					errSROO.at<double>(i) = icp.getFinalTransformation()(i,3);
+				}
+				cout << "errTRO: " << errTRO << endl;
+				cout << "errSROO: " << errSROO << endl;
+			}*/
+		}
+
 	}
 }
 

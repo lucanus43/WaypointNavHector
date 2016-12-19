@@ -7,7 +7,7 @@
   <include file="$(find hector_gazebo_worlds)/launch/small_indoor_scenario.launch"/>
 
   <!-- Spawn simulated quadrotor uav -->
-  <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor_with_asus.launch" >
+  <include file="$(find hector_quadrotor_gazebo)/launch/spawn_quadrotor_with_stereo.launch" >
   <arg name="use_ground_truth_for_control" value="false"/>
    <arg name="use_ground_truth_for_tf" value="true"/>
 
@@ -16,19 +16,20 @@
   <!-- Start rtabmap visualization -->
   <include file="$(find rtabmap_ros)/launch/rtabmap.launch" >
   	<arg name="rtabmap_args" value="--delete_db_on_start"/>
+  	<arg name="stereo" value="true"/>
+  	<arg name="frame_id" value="base_link"/> 
+  	<arg name="stereo_namespace" value=""/>
+  	<arg name="compressed" value="true"/> 
+  	<arg name="left_image_topic" value="/camera/left/image_raw" />
+  	<arg name="right_image_topic" value="/camera/right/image_raw" /> 
+  	<arg name="left_camera_info_topic"  value="/camera/left/camera_info" />
+	<arg name="right_camera_info_topic" value="/camera/right/camera_info" />
   	<arg name="rviz" value="false"/>
-  	<arg name="rtabmapviz" value="false"/>
-  	<arg name="rgb_topic" value="/cam_msg_interceptor/rgb/image_raw"/>
-  	<arg name="depth_topic" value="/cam_msg_interceptor/depth/image_raw"/>
-  	<arg name="camera_info_topic" value="/cam_msg_interceptor/depth/camera_info" />
+  	<arg name="rtabmapviz" value="true"/>
   	<arg name="wait_for_transform" value="1.0"/>
-  	<arg name="queue_size" value="1000"/>
+  	<arg name="queue_size" value="10"/>
   </include>
   	
-  	
-  <node pkg="cam_msg_interceptor" type="cam_msg_interceptor" name="cam_msg_interceptor" output="screen">
-   	<param name="camera_topic" value="camera"/>
-  </node>
 
   <!-- Start rviz visualization with preset config -->
   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_quadrotor_demo)/rviz_cfg/outdoor_flight_asus_cam.rviz"/>

@@ -508,7 +508,7 @@ int main(int argc, char **argv){
 			} else {
 				ROS_INFO("[teach_node] Succeeded in resetting odometry.");
 			}
-			// Set RTABMAP to start new submap (service: trigger_new_map (std_srvs/Empty) )
+			// Set RTABMAP to start new submap (service: rtabmap/reset (std_srvs/Empty) )
 			if (!resetMapClient.call(emptySrv)){
 				ROS_INFO("[teach_node] Failed to reset map.");
 			} else {
