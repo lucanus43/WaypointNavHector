@@ -3,16 +3,13 @@
 <launch>
   <param name="use_sim_time"              value="true" />
   
-  <node pkg="repeat_node" type="repeat_node" name="repeat_node" output="screen">
+  <node pkg="repeat_node" type="repeat_node" name="repeat_node">
   	<param name="map_location" value="$(find teach_node)/maps/"/>
   </node>
   	
    <node pkg="localisation_node" type="localisation_node" name="localisation_node" output="screen">
    	<param name="map_location" value="$(find teach_node)/maps/"/>
   </node>
-  	
-  <node pkg="cam_msg_interceptor" type="cam_msg_interceptor" name="cam_msg_interceptor" output="screen">
-   	<param name="camera_topic" value="camera"/>
-  </node>
+
 
 </launch>

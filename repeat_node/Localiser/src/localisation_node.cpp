@@ -59,22 +59,34 @@ using namespace cv;
 
 // Main variables
 	pcl::PointCloud<pcl::PointXYZ>::Ptr submapCloud (new pcl::PointCloud<pcl::PointXYZ>);
-	Mat SRORhat = Mat::zeros(3,1,CV_64F);
-	Mat errQRO = Mat::zeros(4,1,CV_64F);
-	Mat QROhat = Mat::zeros(4,1,CV_64F);
-	Mat TReR = Mat::zeros(3,3,CV_64F);
-	Mat SReRR = Mat::zeros(3,1,CV_64F);
-	Mat errTRO = Mat::zeros(3,3,CV_64F);
-	Mat errSROO = Mat::zeros(3,1,CV_64F);
-	Mat SOROhat = Mat::zeros(3,1,CV_64F);
-	geometry_msgs::PoseStamped gmerrRO;
+
+	geometry_msgs::PoseStamped gmRLhat;
+	geometry_msgs::PoseStamped gmReRhat;
 	bool submapCloudAvailable = false;
 	bool observedCloudAvailable = false;
 	bool poseAvailable = false;
+	bool submapPoseAvailable = false;
 	std::string map_location;
 	bool publishLoc = false;
+	string submapPoseHeaderID;
+	string submapCloudHeaderID;
 	
+// State variables
+	Mat SOLLhat = Mat::zeros(3,1,CV_64F);
+	Mat QOLhat = Mat::zeros(4,1,CV_64F);
+	Mat SRORhat = Mat::zeros(3,1,CV_64F);
+	Mat SOROhat = Mat::zeros(3,1,CV_64F);
+	Mat QROhat = Mat::zeros(4,1,CV_64F);
+		
 // ICP variables
+	Mat errQRO = Mat::zeros(4,1,CV_64F);
+	Mat TReR = Mat::zeros(3,3,CV_64F);
+	Mat QReR = Mat::zeros(4,1, CV_64F);
+	Mat SReRR = Mat::zeros(3,1,CV_64F);
+	Mat errTRO = Mat::zeros(3,3,CV_64F);
+	Mat errTOR = Mat::zeros(3,3,CV_64F);
+	Mat errSROO = Mat::zeros(3,1,CV_64F);
+	Mat TRLhat_icp = Mat::zeros(3,3,CV_64F);
 	Mat TORhat_icp = Mat::zeros(3,3,CV_64F);
 	Mat SORRhat_icp = Mat::zeros(3,1,CV_64F);
 	Mat QRLhat_icp = Mat::zeros(4,1,CV_64F);
@@ -134,6 +146,7 @@ void submapCloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>
 	pcl::fromPCLPointCloud2(pcl_pc2,*submapCloud);
 	submapCloud->is_dense = false;
 	submapCloudAvailable = true;
+	submapCloudHeaderID = input->header.frame_id;
 }
 
 
@@ -157,6 +170,30 @@ void cloudCallBack(const boost::shared_ptr<const sensor_msgs::PointCloud2>& inpu
 	observedCloudAvailable = true;
 }
 
+// -------------------------------------------------------------
+/*
+submapPoseCallBack - Callback function for submap pose subscriber
+
+Author: JDev 161220
+	
+*/
+// -------------------------------------------------------------
+void submapPoseCallBack(const geometry_msgs::PoseStamped::ConstPtr& gmOL){
+	// Local variables
+	// ..
+	
+	// Process
+	SOLLhat.at<double>(0) = gmOL->pose.position.x;
+	SOLLhat.at<double>(1) = gmOL->pose.position.y;
+	SOLLhat.at<double>(2) = gmOL->pose.position.z;
+	QOLhat.at<double>(0) = gmOL->pose.orientation.x;
+	QOLhat.at<double>(1) = gmOL->pose.orientation.y;
+	QOLhat.at<double>(2) = gmOL->pose.orientation.z;
+	QOLhat.at<double>(3) = gmOL->pose.orientation.w;
+	submapPoseHeaderID = gmOL->header.frame_id;
+	submapPoseAvailable = true;
+
+}
 
 // ----------------------- PROCESS FUNCTIONS ---------------------- //
 // -------------------------------------------------------------
@@ -176,6 +213,7 @@ void performICP(){
 	pcl::PointCloud<pcl::PointXYZ>::Ptr transformedSubCloud(new pcl::PointCloud<pcl::PointXYZ>); 
 	Mat SPRO_sub = Mat::zeros(3,1,CV_64F);
 	Mat SPRR_sub = Mat::zeros(3,1,CV_64F);
+	Mat TOLhat = Mat::zeros(3,3,CV_64F);
 	//Mat SPOR_obs = Mat::zeros(3,1,CV_64F);
 	//Mat SPOO_obs = Mat::zeros(3,1,CV_64F);
 	
@@ -183,13 +221,16 @@ void performICP(){
 	// Set transformedSubCloud to have the same data as submapCloud
 	*transformedSubCloud = *submapCloud;
 	
-
+	cout << "submapCloudHeaderID: " << submapCloudHeaderID << endl;
+	cout << "submapPoseHeaderID: " << submapPoseHeaderID << endl;
+	cout << "SOLLhat [loc]: " << SOLLhat << endl;
 	
-	if (observedCloudAvailable && poseAvailable){
+	if ((submapCloudHeaderID.compare(submapPoseHeaderID) == 0) && observedCloudAvailable && poseAvailable){
 		// Set poseAvailable, submapCloudAvailable and cloudAvailable to false
 		poseAvailable = false;
 		observedCloudAvailable = false;
 		submapCloudAvailable = false;
+		submapPoseAvailable = false;
 	
 		// Need to determine errSORO/errTOR
 		// Observed cloud is a series of SPRR_obs points. SubmapCloud is a series of SPOO_sub points
@@ -220,33 +261,36 @@ void performICP(){
 			transformedSubCloud->points[i].z = SPRR_sub.at<double>(2);
 		}
 		// Output to user
-
+	 	pcl::io::savePCDFileASCII (map_location + "obsCloud.pcd", *observedCloud);
+		pcl::io::savePCDFileASCII (map_location + "transformedSub.pcd", *transformedSubCloud);
+		
 		// Perform icp on transformedSubCloud -> This produces SReR and QReR (transform from
 		// observedCloud to transformedSubCloud).
 		icp.setInputSource(observedCloud);
 	 	icp.setInputTarget(transformedSubCloud);
 	 	
+	 	
 	 	// Perform alignment
 	 	icp.align(alignedCloud);
 	 	
 	 	// Output fitness score and TROhat
-	 	ROS_INFO_STREAM("TROhat: " <<  quat2dcm(QROhat));
-	 	ROS_INFO_STREAM("SOROhat: " <<  SOROhat);
-	 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
+	 	ROS_INFO_STREAM("TROhat [loc]: " <<  quat2dcm(QROhat));
+	 	ROS_INFO_STREAM("SOROhat [loc]: " <<  SOROhat);
+	 	ROS_INFO_STREAM("SOLLhat [loc]: " << SOLLhat);
+	 	ROS_INFO_STREAM("Fitness score [loc]: " << icp.getFitnessScore());
 
 		// Obtain final transformation from ICP
 		// This is error in SORO and TRO
 		// If fitness score is < 0.1, no need to do ICP anymore.
-		if (icp.getFitnessScore() < 0.01){
+		if (icp.getFitnessScore() < 0.05){
 			publishLoc = true;
 			// Align to alignedCloud
 			// Save files
-	 		pcl::io::savePCDFileASCII (map_location + "obsCloud.pcd", *observedCloud);
-			pcl::io::savePCDFileASCII (map_location + "transformedSub.pcd", *transformedSubCloud);
+
 			pcl::io::savePCDFileASCII (map_location + "aligned.pcd", alignedCloud);
 		
 		
-			std::cout << "has converged:" << icp.hasConverged() << " score: " <<
+			std::cout << "[loc] has converged:" << icp.hasConverged() << " score: " <<
   			icp.getFitnessScore() << std::endl;
 			for (int i = 0; i < 3; i++){
 				for (int j = 0; j < 3; j++) {
@@ -254,37 +298,78 @@ void performICP(){
 				}
 				SReRR.at<double>(i) = icp.getFinalTransformation()(i,3);
 			}
+			
+			// Set QReR
+			QReR = dcm2quat(TReR);
+			
 			errTRO = TReR.t(); //TReR.t();		// QROhat is technically QReOhat
 			errSROO = -SReRR;	//(TReR.t()*quat2dcm(QROhat)).t()*SReRR;		// Likewise, SRORhat is SReORehat
-			cout << "errTRO: " << errTRO << endl;
-			cout << "errSROO: " << errSROO << endl;
+			ROS_INFO_STREAM("errTRO [loc]: " << errTRO);
+			ROS_INFO_STREAM("errSROO [loc]: " << errSROO);
 			
 			// Convert errTOR and errSORO to gmerrOR for broadcast
 			errQRO = dcm2quat(errTRO);
+			cout << "SOLLhat [loc]: " << SOLLhat << endl;
+			
+			// Convert QOLhat to TOLhat
+			TOLhat = quat2dcm(QOLhat);
+			
+			// Convert errQRO to errTOR
+			errTOR = quat2dcm(errQRO).t(); 		// errTOR = TReR;
+			TORhat_icp = quat2dcm(QROhat).t()*errTOR;		// TORhat = TORe*TReR		// QROhat <- state update
+			cout << "QORhat_icp: " << dcm2quat(TORhat_icp) << endl;
 		
-			gmerrRO.pose.position.x = errSROO.at<double>(0);
-			gmerrRO.pose.position.y = errSROO.at<double>(1);
-			gmerrRO.pose.position.z = errSROO.at<double>(2);
-			gmerrRO.pose.orientation.x = errQRO.at<double>(0);
-			gmerrRO.pose.orientation.y = errQRO.at<double>(1);
-			gmerrRO.pose.orientation.z = errQRO.at<double>(2);
-			gmerrRO.pose.orientation.w = errQRO.at<double>(3);
-			gmerrRO.header.stamp = ros::Time::now();
-			gmerrRO.header.seq++;
-			gmerrRO.header.frame_id = "O-frame";
+			// errSROO = SReRR; SORRhat = SOReR+SReRR
+			SORRhat_icp = - errTOR*SRORhat + errSROO;		//-TORhat_icp.t()*errSROO - SRORhat;	// SORRhat <- state update
+			cout << "SORRhat_icp: " << SORRhat_icp << endl;
+		
+			// Calculate QRLhat_icp, SRLLhat_icp
+			QRLhat_icp = dcm2quat(TORhat_icp.t()*TOLhat);			// TOLhat <- submap
+			cout << "QRLhat_icp: " << QRLhat_icp << endl;
+		
+			SORLhat_icp = quat2dcm(QRLhat_icp).t()*SORRhat_icp;
+			cout << "SORLhat_icp: " << SORLhat_icp << endl;
+		
+			SRLLhat_icp = -SORLhat_icp + SOLLhat; 				// SOLLhat <- submap
+			cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
+			
+			
+			// Set SRLLhat_icp and QRLhat_icp for broadcast
+			gmRLhat.pose.position.x = SRLLhat_icp.at<double>(0);
+			gmRLhat.pose.position.y = SRLLhat_icp.at<double>(1);
+			gmRLhat.pose.position.z = SRLLhat_icp.at<double>(2);
+			gmRLhat.pose.orientation.x = QRLhat_icp.at<double>(0);
+			gmRLhat.pose.orientation.y = QRLhat_icp.at<double>(1);
+			gmRLhat.pose.orientation.z = QRLhat_icp.at<double>(2);
+			gmRLhat.pose.orientation.w = QRLhat_icp.at<double>(3);
+			gmRLhat.header.stamp = ros::Time::now();
+			gmRLhat.header.seq++;
+			gmRLhat.header.frame_id = submapCloudHeaderID;
+			
+			
+			// Set SReR and QReR for broadcast
+			gmReRhat.pose.position.x = SReRR.at<double>(0);
+			gmReRhat.pose.position.y = SReRR.at<double>(1);
+			gmReRhat.pose.position.z = SReRR.at<double>(2);
+			gmReRhat.pose.orientation.x = QReR.at<double>(0);
+			gmReRhat.pose.orientation.y = QReR.at<double>(1);
+			gmReRhat.pose.orientation.z = QReR.at<double>(2);
+			gmReRhat.pose.orientation.w = QReR.at<double>(3);
+			gmReRhat.header.stamp = ros::Time::now();
+			gmReRhat.header.seq++;
+			gmReRhat.header.frame_id = submapCloudHeaderID;
 			
 		} else {
 			// NOTE:	If observed cloud is used, error terms can be applied to
 			//			TORhat/SOROhat due to observedCloud being SPRRhat_obs points.
 			//			Error terms will actually be TRO and SORO. Will not need to be applied to QROhat/SRORhat.
-			/*// Perform icp on observedCloud
-			icp.setInputSource(observedCloud);
+			// Perform icp on observedCloud
+			/*icp.setInputSource(observedCloud);
 		 	icp.setInputTarget(submapCloud);
 		 	icp.align(alignedCloud);
 		 	std::cout << "Failed with transformedObs. Trying ObservedCloud." << std::endl;
 		 	ROS_INFO_STREAM("Fitness score: " << icp.getFitnessScore());
 		 	if (icp.getFitnessScore() < 0.01){
-				doICP = false;
 				publishLoc = true;
 				// Align to alignedCloud
 				pcl::io::savePCDFileASCII (map_location + "aligned.pcd", alignedCloud);
@@ -294,12 +379,37 @@ void performICP(){
 	  			icp.getFitnessScore() << std::endl;
 				for (int i = 0; i < 3; i++){
 					for (int j = 0; j < 3; j++) {
-						errTRO.at<double>(i,j) = icp.getFinalTransformation()(i,j);
+						TRLhat_icp.at<double>(i,j) = icp.getFinalTransformation()(i,j);
 					}
-					errSROO.at<double>(i) = icp.getFinalTransformation()(i,3);
+					SRLLhat_icp.at<double>(i) = icp.getFinalTransformation()(i,3);
 				}
-				cout << "errTRO: " << errTRO << endl;
-				cout << "errSROO: " << errSROO << endl;
+				cout << "QRLhat_icp: " << dcm2quat(TRLhat_icp) << endl;
+				cout << "SRLLhat_icp: " << SRLLhat_icp << endl;
+			
+					// Set SRLLhat_icp and QRLhat_icp for broadcast
+			gmRLhat.pose.position.x = SRLLhat_icp.at<double>(0);
+			gmRLhat.pose.position.y = SRLLhat_icp.at<double>(1);
+			gmRLhat.pose.position.z = SRLLhat_icp.at<double>(2);
+			gmRLhat.pose.orientation.x = QRLhat_icp.at<double>(0);
+			gmRLhat.pose.orientation.y = QRLhat_icp.at<double>(1);
+			gmRLhat.pose.orientation.z = QRLhat_icp.at<double>(2);
+			gmRLhat.pose.orientation.w = QRLhat_icp.at<double>(3);
+			gmRLhat.header.stamp = ros::Time::now();
+			gmRLhat.header.seq++;
+			gmRLhat.header.frame_id = submapCloudHeaderID;
+			
+			// Set SReR and QReR for broadcast
+			gmReRhat.pose.position.x = SReRR.at<double>(0);
+			gmReRhat.pose.position.y = SReRR.at<double>(1);
+			gmReRhat.pose.position.z = SReRR.at<double>(2);
+			gmReRhat.pose.orientation.x = QReR.at<double>(0);
+			gmReRhat.pose.orientation.y = QReR.at<double>(1);
+			gmReRhat.pose.orientation.z = QReR.at<double>(2);
+			gmReRhat.pose.orientation.w = QReR.at<double>(3);
+			gmReRhat.header.stamp = ros::Time::now();
+			gmReRhat.header.seq++;
+			gmReRhat.header.frame_id = submapCloudHeaderID;
+			
 			}*/
 		}
 
@@ -325,13 +435,17 @@ int main(int argc, char **argv){
 	ros::Subscriber cloudSub;	// Point cloud subscriber
 	ros::Subscriber submapCloudSub;	// Submap cloud subscriber
 	ros::Subscriber cloudAlignEstSub; 	// Subscriber to SRORhat/QROhat
+	ros::Subscriber submapPoseSub;		// Subscriber to SOLLhat/QOLhat
+	ros::Publisher localisationErrorPub;	// Localisation error publisher
 	ros::Publisher localisationUpdate;	// Publisher to send update from localisation node
 	
 	// Initialisation
 	localisationUpdate = nh.advertise<geometry_msgs::PoseStamped>("repeat_node/locPose", 1);
-	cloudSub = nh.subscribe("rtabmap/cloud_map", 100, cloudCallBack);	// from RTABMAP
+	localisationErrorPub = nh.advertise<geometry_msgs::PoseStamped>("repeat_node/locErr", 1);
+	cloudSub = nh.subscribe("rtabmap/cloud_map", 1, cloudCallBack);	// from RTABMAP
 	submapCloudSub = nh.subscribe("repeat_node/submapCloud",1, submapCloudCallBack);	// From repeat pass
 	cloudAlignEstSub = nh.subscribe("repeat_node/cloudAlignment",1, cloudAlignmentCallBack);	// SROR, QRO
+	submapPoseSub = nh.subscribe("repeat_node/submapPose",1, submapPoseCallBack);
 	// Obtain map location
 	nh.getParam("/localisation_node/map_location", map_location);
 	
@@ -344,7 +458,8 @@ int main(int argc, char **argv){
 		// TODO: Will this publish old data? Perhaps if statement could help here.
 		if (publishLoc){
 			publishLoc = false;
-			localisationUpdate.publish(gmerrRO);
+			localisationUpdate.publish(gmRLhat);
+			localisationErrorPub.publish(gmReRhat);
 		}
 		rate.sleep();
 	}

@@ -64,15 +64,16 @@ ROS_INFO("fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.
 
 // Force the pose of the UAV to converge to desired pose before moving to next WP.
 //If the current position is close to the current goal for X, Y, & Z
-	if( fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius && fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ) < wp_radius) {
-		if( fabs( current_pos->pose.position.y - current_goal.pose.position.y  < wp_radius ) && fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius) {
-			if( fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius  && fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius) {
+	if( (fabs( current_pos->pose.position.x - current_goal.pose.position.x ) < wp_radius) && (fabs( current_pos->pose.orientation.x - current_goal.pose.orientation.x ) < wp_radius)) {
+		if( (fabs( current_pos->pose.position.y - current_goal.pose.position.y)  < wp_radius ) && (fabs( current_pos->pose.orientation.y - current_goal.pose.orientation.y ) < wp_radius)) {
+			if( (fabs( current_pos->pose.position.z - current_goal.pose.position.z )  < wp_radius)  && (fabs( current_pos->pose.orientation.z - current_goal.pose.orientation.z ) < wp_radius)) {
 				//If there are more waypoints
 				wp_counter++;	//Move to the next waypoint
 				if( wp_counter < waypoints.size() ) {
 					current_goal.pose = waypoints.at(wp_counter);
 				} else {
 					//quit_loop = true;
+					
 					ROS_INFO( "Finished the waypoint path!" );
 				}
 			}
@@ -96,8 +97,8 @@ void generate_waypoints() {
 	// Set waypoint orientation
 	tmp_wp.orientation = gm_temp_quat;	//Intitalize the quaternion (relying on x, y, and z to default to 0
 	// Set waypoint displacement (rel. local-level frame)
-	tmp_wp.position.x = -0.0;
-	tmp_wp.position.y = -0.0;
+	tmp_wp.position.x = -0.1;
+	tmp_wp.position.y = -0.1;
 	tmp_wp.position.z = 5.0;	//First waypoint is at [0, 0, 5]
 	// Push back
 	waypoints.push_back(tmp_wp);
@@ -121,24 +122,95 @@ void generate_waypoints() {
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 4
-	tmp_wp.position.x = 3.0;	//[3, 0, 5.0]
+	tmp_wp.position.x = 2.5;	//[3, 0, 5.0]
+	tmp_wp.position.y = -0.5;	//[3, 0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 5
-	tmp_wp.position.x = 2.0;	//[0, 0, 5.0]
-	//tmp_wp.position.y = 0.0;
+	tmp_wp.position.x = 3.0;	//[0, 0, 5.0]
+	tmp_wp.position.y = -1.0;	//[3, 0, 5.0
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 6
-	tmp_wp.position.x = 1.0;	//[0, 0, 5.0]
-	//tmp_wp.position.y = 0.0;
+	tmp_wp.position.x = 3.5;	//[0, 0, 5.0]
+	tmp_wp.position.y = -1.5;	//[3, 0, 5.0
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 7
-	tmp_wp.position.x = 0.0;	//[0, 0, 5.0]
+	tmp_wp.position.x = 4.0;	//[0, 0, 5.0]
+	
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 8
+	tmp_wp.position.x = 4.5;	//[0, 0, 5.0]
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 9
+	tmp_wp.position.x = 5.0;	//[0, 0, 5.0]
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 10
+	tmp_wp.position.x = 5.5;	//[0, 0, 5.0]
 	//tmp_wp.position.y = 0.0;
 	waypoints.push_back(tmp_wp);
 	
+	//Waypoint 11
+	tmp_wp.position.x = 6.0;	//[0, 0, 5.0]
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 12
+	tmp_wp.position.x = 6.5;	//[0, 0, 5.0]
+	//tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 13
+	tmp_wp.position.x = 7.0;	//[0, 0, 5.0]
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 14
+	tmp_wp.position.x = 7.5;	//[0, 0, 5.0]
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 15
+	tmp_wp.position.x = 8.0;	//[0, 0, 5.0]
+	tmp_wp.position.y = -1.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 16
+	tmp_wp.position.x = 8.5;	//[0, 0, 5.0]
+	tmp_wp.position.y = -0.5;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 17
+	tmp_wp.position.x = 9.0;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 18
+	tmp_wp.position.x = 9.5;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 19
+	tmp_wp.position.x = 10.0;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	
+	//Waypoint 20
+	tmp_wp.position.x = 10.5;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 21
+	tmp_wp.position.x = 11.0;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
+	
+	//Waypoint 22
+	tmp_wp.position.x = 11.5;	//[0, 0, 5.0]
+	tmp_wp.position.y = 0.0;
+	waypoints.push_back(tmp_wp);
 	
 }
 

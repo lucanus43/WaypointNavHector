@@ -116,12 +116,12 @@ void generate_waypoints() {
 	tmp_wp.position.z = 5.0;
 	waypoints.push_back(tmp_wp);
 	
-	//Waypoint 3
-	tmp_wp.position.x = 1.8;	//[2.0, 0.0, 5.0]
+	/*//Waypoint 3
+	tmp_wp.position.x = 2.0;	//[2.0, 0.0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 4
-	/*tmp_wp.position.x = 3.0;	//[3, 0, 5.0]
+	tmp_wp.position.x = 3.0;	//[3, 0, 5.0]
 	waypoints.push_back(tmp_wp);
 	
 	//Waypoint 5
